@@ -1,0 +1,37 @@
+[Unit]
+Description=Strikeball Positioning Server
+Documentation=https://github.com/strikeballserver
+After=network.target postgresql.service
+
+[Service]
+Type=notify
+User=strikeball
+Group=strikeball
+WorkingDirectory=/opt/strikeball/server
+
+# Запуск
+ExecStart=/usr/bin/dotnet StrikeballServer.dll
+
+# Перезапуск при сбое
+Restart=always
+RestartSec=10
+
+# Лимиты ресурсов
+MemoryMax=1G
+CPUQuota=80%
+
+# Логирование
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=strikeball-server
+
+# Таймауты
+TimeoutStartSec=30
+TimeoutStopSec=30
+
+# Переменные окружения
+Environment="ASPNETCORE_ENVIRONMENT=Production"
+Environment="ASPNETCORE_URLS=http://0.0.0.0:5000"
+
+[Install]
+WantedBy=multi-user.target

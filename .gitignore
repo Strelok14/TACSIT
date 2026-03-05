@@ -1,0 +1,50 @@
+# Игнорируем артефакты сборки
+bin/
+obj/
+*.dll
+*.exe
+*.pdb
+
+# База данных SQLite
+*.db
+*.db-shm
+*.db-wal
+
+# Логи
+*.log
+logs/
+
+# User-specific files
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Visual Studio Code
+.vscode/
+.vs/
+
+# Rider
+.idea/
+*.sln.iml
+
+# Временные файлы
+*.tmp
+*.temp
+*.swp
+*~
+
+# Настройки окружения
+appsettings.Production.json
+appsettings.Secrets.json
+
+# NuGet пакеты
+*.nupkg
+*.snupkg
+packages/
+.nuget/
+
+# Test результаты
+TestResults/
+*.trx
+*.coverage

@@ -1,0 +1,104 @@
+#!/bin/bash
+
+# 🚀 Скрипт развертывания Strikeball Server на Linux Debian/Ubuntu
+# Использование: sudo ./deploy.sh
+
+set -e
+
+echo "=========================================="
+echo "🚀 Развертывание Strikeball Server v1.0"
+echo "=========================================="
+
+# 1. Проверка root
+if [ "$EUID" -ne 0 ]; then 
+   echo "❌ Этот скрипт должен запускаться с sudo"
+   exit 1
+fi
+
+# 2. Установка зависимостей
+echo "📦 Установка зависимостей..."
+apt-get update
+apt-get install -y curl wget postgresql postgresql-contrib
+
+# 3. Установка .NET 8 Runtime
+echo "📦 Установка .NET 8 Runtime..."
+wget https://dot.net/v1/dotnet-install.sh -O /tmp/dotnet-install.sh
+chmod +x /tmp/dotnet-install.sh
+/tmp/dotnet-install.sh --runtime aspnetcore --version 8.0
+
+# Добавляем .NET в PATH
+export PATH="$PATH:$HOME/.dotnet"
+ln -sf $HOME/.dotnet/dotnet /usr/local/bin/dotnet || true
+
+# 4. Создание пользователя
+echo "👤 Создание пользователя strikeball..."
+useradd -m -s /bin/false strikeball || echo "Пользователь уже существует"
+
+# 5. Создание директорий
+echo "📁 Создание директорий..."
+mkdir -p /opt/strikeball/server
+mkdir -p /var/log/strikeball
+chown -R strikeball:strikeball /opt/strikeball
+chown -R strikeball:strikeball /var/log/strikeball
+
+# 6. Копирование приложения
+echo "📋 Копирование приложения..."
+if [ -d "Server" ]; then
+    # Если запускаем из папки с исходниками
+    cd Server
+    dotnet publish -c Release -o /opt/strikeball/server
+    cd ..
+else
+    echo "❌ Ошибка: не найдена папка Server"
+    exit 1
+fi
+
+chmod +x /opt/strikeball/server/StrikeballServer
+
+# 7. Настройка PostgreSQL
+echo "🗃️  Настройка PostgreSQL..."
+systemctl start postgresql
+sudo -u postgres psql <<EOF
+DROP DATABASE IF EXISTS strikeballdb;
+DROP USER IF EXISTS strikeballuser;
+
+CREATE USER strikeballuser WITH PASSWORD 'strikeballpassword123';
+CREATE DATABASE strikeballdb OWNER strikeballuser;
+GRANT ALL PRIVILEGES ON DATABASE strikeballdb TO strikeballuser;
+
+\c strikeballdb
+GRANT ALL ON SCHEMA public TO strikeballuser;
+EOF
+
+echo "✅ PostgreSQL настроена"
+
+# 8. Установка systemd service
+echo "⚙️  Установка systemd service..."
+cp strikeball-server.service /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable strikeball-server
+systemctl restart strikeball-server
+
+# 9. Проверка статуса
+echo ""
+echo "=========================================="
+echo "✅ Развертывание завершено!"
+echo "=========================================="
+echo ""
+echo "📊 Статус сервиса:"
+systemctl status strikeball-server --no-pager || true
+echo ""
+echo "📝 Логи:"
+journalctl -u strikeball-server -n 10 --no-pager || true
+echo ""
+echo "🌐 Доступ:"
+echo "   Swagger UI: http://localhost:5000"
+echo "   API: http://localhost:5000/api"
+echo "   WebSocket: ws://localhost:5000/hubs/positioning"
+echo ""
+echo "📋 Полезные команды:"
+echo "   Просмотр логов: sudo journalctl -u strikeball-server -f"
+echo "   Перезапуск: sudo systemctl restart strikeball-server"
+echo "   Остановка: sudo systemctl stop strikeball-server"
+echo "   Статус: sudo systemctl status strikeball-server"
+echo ""
