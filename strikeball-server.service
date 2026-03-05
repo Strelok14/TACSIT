@@ -32,6 +32,7 @@ TimeoutStopSec=30
 # Переменные окружения
 Environment="ASPNETCORE_ENVIRONMENT=Production"
 Environment="ASPNETCORE_URLS=http://0.0.0.0:5000"
+Environment="DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1"
 
 [Install]
 WantedBy=multi-user.target

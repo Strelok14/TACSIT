@@ -18,7 +18,10 @@ fi
 # 2. Установка зависимостей
 echo "📦 Установка зависимостей..."
 apt-get update
-apt-get install -y curl wget postgresql postgresql-contrib
+apt-get install -y curl wget postgresql postgresql-contrib ca-certificates zlib1g libssl3 libgssapi-krb5-2
+
+# ICU необходим для globalization в .NET (иначе возможен SIGABRT при старте)
+apt-get install -y libicu72 || apt-get install -y libicu71 || apt-get install -y libicu70 || apt-get install -y libicu67 || apt-get install -y libicu-dev
 
 # 3. Установка .NET 8 SDK (нужен для dotnet publish)
 echo "📦 Установка .NET 8 SDK..."
