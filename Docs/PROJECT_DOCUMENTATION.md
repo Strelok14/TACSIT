@@ -122,6 +122,8 @@ beacon_id=1, anchors=[1->5.2m, 2->7.3m, 3->4.8m, 4->6.1m], timestamp=17090484000
 | X | double | Координата X (метры) |
 | Y | double | Координата Y (метры) |
 | Z | double | Координата Z (метры, высота) |
+| Latitude | double | Широта WGS84 (если известна) |
+| Longitude | double | Долгота WGS84 (если известна) |
 | MacAddress | string | MAC адрес UWB модуля |
 | CalibrationOffset | double | Калибровочное смещение (метры) |
 | Status | enum | Active / Inactive / Error |
@@ -215,6 +217,8 @@ beacon_id=1, anchors=[1->5.2m, 2->7.3m, 3->4.8m, 4->6.1m], timestamp=17090484000
 - `PUT /api/anchors/{id}` — Обновить координаты якоря
 - `DELETE /api/anchors/{id}` — Удалить якорь
 
+> Примечание: В API `Anchor` теперь поддерживает дополнительные поля `latitude` и `longitude` (WGS84). Сервер сохраняет как локальные координаты `x,y,z` (метры) для триангуляции, так и опциональные `latitude/longitude` для отображения на глобальной карте.
+
 ### Маяки
 - `GET /api/beacons` — Список всех маяков
 - `POST /api/beacons` — Зарегистрировать новый маяк
@@ -305,6 +309,69 @@ sudo systemctl status strikeball
 1. Запуск сервера: `dotnet run --project Server`
 2. Симулятор маяка: `Tests/BeaconSimulator.cs`
 3. Проверка API: Swagger UI → `http://localhost:5000/swagger`
+
+### Географические координаты (WGS84)
+
+Если вы хотите, чтобы клиент отображал якоря по широте/долготе, добавьте `latitude` и `longitude` в объект `Anchor`. Сервер приоритетно использует `x,y,z` для вычислений, но клиент может использовать `latitude/longitude` для визуализации на карте.
+
+Пример POST с lat/lon:
+
+```bash
+curl -X POST http://SERVER_IP:5000/api/anchors -H "Content-Type: application/json" -d '{
+  "name":"Anchor-Geo-1",
+  "x":0.0,
+  "y":0.0,
+  "z":2.0,
+  "latitude":56.260429,
+  "longitude":44.009171
+}'
+```
+
+Пример PUT для обновления существующего якоря (id=5):
+
+```bash
+curl -X PUT http://SERVER_IP:5000/api/anchors/5 -H "Content-Type: application/json" -d '{
+  "id":5,
+  "name":"Anchor-1",
+  "x":0.0,
+  "y":0.0,
+  "z":0.0,
+  "latitude":56.260429,
+  "longitude":44.009171
+}'
+```
+
+Если у вас есть только WGS84 (lat/lon) и нужно конвертировать в локальные метры для триангуляции, используйте простую приближенную формулу (подходит для небольших площадей):
+
+- Выберите опорную точку (lat0, lon0) — она станет `(0,0)` в локальной системе.
+- Вычислите смещение в метрах:
+
+  - Δnorth_m = (lat - lat0) * meters_per_degree_lat
+  - Δeast_m  = (lon - lon0) * meters_per_degree_lon_at_lat0
+
+  Где примерно: `meters_per_degree_lat ≈ 111132` m, а `meters_per_degree_lon ≈ 111320 * cos(lat0)` m.
+
+Пример кода JS для конверсии:
+
+```javascript
+const origin = { lat: 56.260429, lon: 44.009171 };
+const metersPerDegLat = 111132.0;
+const metersPerDegLon = 111320.0 * Math.cos(origin.lat * Math.PI / 180);
+
+function latLonToXY(lat, lon) {
+  const dy = (lat - origin.lat) * metersPerDegLat;
+  const dx = (lon - origin.lon) * metersPerDegLon;
+  return { x: dx, y: dy };
+}
+
+function xyToLatLon(x, y) {
+  const lat = origin.lat + y / metersPerDegLat;
+  const lon = origin.lon + x / metersPerDegLon;
+  return { lat, lon };
+}
+```
+
+Рекомендация: храните в БД оба представления (`x,y,z` и `latitude,longitude`) — это даёт точность для вычислений и удобство для картографического отображения.
 
 ### Тестирование на полигоне
 1. Расставить 4 якоря в известных точках

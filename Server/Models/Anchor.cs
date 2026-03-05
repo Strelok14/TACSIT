@@ -31,6 +31,16 @@ public class Anchor
     public double Z { get; set; }
 
     /// <summary>
+    /// Географическая широта (WGS84)
+    /// </summary>
+    public double? Latitude { get; set; }
+
+    /// <summary>
+    /// Географическая долгота (WGS84)
+    /// </summary>
+    public double? Longitude { get; set; }
+
+    /// <summary>
     /// MAC адрес UWB модуля якоря
     /// </summary>
     [MaxLength(17)]
