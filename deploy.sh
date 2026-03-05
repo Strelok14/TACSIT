@@ -20,19 +20,21 @@ echo "📦 Установка зависимостей..."
 apt-get update
 apt-get install -y curl wget postgresql postgresql-contrib
 
-# 3. Установка .NET 8 Runtime
-echo "📦 Установка .NET 8 Runtime..."
+# 3. Установка .NET 8 SDK (нужен для dotnet publish)
+echo "📦 Установка .NET 8 SDK..."
 wget https://dot.net/v1/dotnet-install.sh -O /tmp/dotnet-install.sh
 chmod +x /tmp/dotnet-install.sh
 
-# Важно: для dotnet-install используем channel, а не version=8.0
-# (version=8.0 ищет несуществующий точный тег и падает)
-/tmp/dotnet-install.sh --runtime aspnetcore --channel 8.0
+# Важно: ставим SDK, т.к. ниже выполняется dotnet publish
+/tmp/dotnet-install.sh --channel 8.0 --install-dir /usr/share/dotnet
 
 # Добавляем .NET в PATH и системные ссылки
-export PATH="$PATH:$HOME/.dotnet"
-ln -sf $HOME/.dotnet/dotnet /usr/local/bin/dotnet || true
-ln -sf $HOME/.dotnet/dotnet /usr/bin/dotnet || true
+export PATH="$PATH:/usr/share/dotnet"
+ln -sf /usr/share/dotnet/dotnet /usr/local/bin/dotnet || true
+ln -sf /usr/share/dotnet/dotnet /usr/bin/dotnet || true
+
+# Быстрая проверка SDK
+dotnet --list-sdks | grep '^8\.' >/dev/null
 
 # 4. Создание пользователя
 echo "👤 Создание пользователя strikeball..."
