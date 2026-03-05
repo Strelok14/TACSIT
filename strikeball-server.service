@@ -4,7 +4,7 @@ Documentation=https://github.com/strikeballserver
 After=network.target postgresql.service
 
 [Service]
-Type=notify
+Type=simple
 User=strikeball
 Group=strikeball
 WorkingDirectory=/opt/strikeball/server
