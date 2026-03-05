@@ -24,11 +24,15 @@ apt-get install -y curl wget postgresql postgresql-contrib
 echo "📦 Установка .NET 8 Runtime..."
 wget https://dot.net/v1/dotnet-install.sh -O /tmp/dotnet-install.sh
 chmod +x /tmp/dotnet-install.sh
-/tmp/dotnet-install.sh --runtime aspnetcore --version 8.0
 
-# Добавляем .NET в PATH
+# Важно: для dotnet-install используем channel, а не version=8.0
+# (version=8.0 ищет несуществующий точный тег и падает)
+/tmp/dotnet-install.sh --runtime aspnetcore --channel 8.0
+
+# Добавляем .NET в PATH и системные ссылки
 export PATH="$PATH:$HOME/.dotnet"
 ln -sf $HOME/.dotnet/dotnet /usr/local/bin/dotnet || true
+ln -sf $HOME/.dotnet/dotnet /usr/bin/dotnet || true
 
 # 4. Создание пользователя
 echo "👤 Создание пользователя strikeball..."
