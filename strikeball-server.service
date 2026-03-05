@@ -33,6 +33,7 @@ TimeoutStopSec=30
 Environment="ASPNETCORE_ENVIRONMENT=Production"
 Environment="ASPNETCORE_URLS=http://0.0.0.0:5000"
 Environment="DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1"
+Environment="ConnectionStrings__PostgreSQL=Host=localhost;Database=strikeballdb;Username=strikeballuser;Password=strikeballpassword123;Port=5432;SSL Mode=Disable;"
 
 [Install]
 WantedBy=multi-user.target
