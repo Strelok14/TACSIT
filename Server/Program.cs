@@ -54,6 +54,8 @@ builder.Services.AddCors(options =>
 builder.Services.AddScoped<IPositioningService, PositioningService>();
 builder.Services.AddScoped<IFilteringService, FilteringService>();
 builder.Services.AddSingleton<ITelemetryService, TelemetryService>();
+// Beacon key store for HMAC-based authentication (reads from env or config)
+builder.Services.AddSingleton<IBeaconKeyStore, BeaconKeyStore>();
 
 // Logging
 builder.Logging.ClearProviders();

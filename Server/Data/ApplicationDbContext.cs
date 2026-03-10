@@ -18,6 +18,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<Beacon> Beacons { get; set; } = null!;
     public DbSet<Measurement> Measurements { get; set; } = null!;
     public DbSet<Position> Positions { get; set; } = null!;
+    public DbSet<Anomaly> Anomalies { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -88,6 +89,17 @@ public class ApplicationDbContext : DbContext
 
             // Index for faster queries by beacon and timestamp
             entity.HasIndex(e => new { e.BeaconId, e.Timestamp });
+            entity.HasIndex(e => e.Timestamp);
+        });
+
+        // Anomaly configuration
+        modelBuilder.Entity<Anomaly>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Type).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.Details).HasMaxLength(2000);
+            entity.Property(e => e.Timestamp).IsRequired();
+            entity.HasIndex(e => e.BeaconId);
             entity.HasIndex(e => e.Timestamp);
         });
 

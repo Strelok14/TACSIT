@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using StrikeballServer.Data;
 using StrikeballServer.Models;
 using StrikeballServer.Services;
+using Microsoft.Extensions.Configuration;
 using StrikeballServer.Hubs;
 using Microsoft.AspNetCore.SignalR;
 
@@ -19,17 +20,87 @@ public class TelemetryController : ControllerBase
     private readonly IPositioningService _positioningService;
     private readonly IHubContext<PositioningHub> _hubContext;
     private readonly ILogger<TelemetryController> _logger;
+    private readonly IBeaconKeyStore _keyStore;
+    private readonly bool _requireSignature;
 
-    public TelemetryController(
+    // In-memory last sequence tracking to prevent replay (simple implementation)
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, long> _lastSequence =
+        new System.Collections.Concurrent.ConcurrentDictionary<int, long>();
+
+        public TelemetryController(
         ApplicationDbContext context,
         IPositioningService positioningService,
         IHubContext<PositioningHub> hubContext,
-        ILogger<TelemetryController> logger)
+        ILogger<TelemetryController> logger,
+        IBeaconKeyStore keyStore,
+        IConfiguration config)
     {
         _context = context;
         _positioningService = positioningService;
         _hubContext = hubContext;
         _logger = logger;
+        _keyStore = keyStore;
+        _requireSignature = config.GetValue<bool>("Telemetry:RequireSignature", true);
+    }
+
+    private async Task<bool> VerifySignatureAsync(MeasurementPacketDto packet)
+    {
+        var keyBase64 = await _keyStore.GetKeyAsync(packet.BeaconId);
+        if (string.IsNullOrEmpty(keyBase64))
+        {
+            _logger.LogWarning("No key configured for beacon {id}", packet.BeaconId);
+            return false;
+        }
+
+        try
+        {
+            var keyBytes = Convert.FromBase64String(keyBase64);
+
+            // Canonical payload: beaconId|sequence|timestamp|distances
+            var sb = new System.Text.StringBuilder();
+            sb.Append(packet.BeaconId).Append('|').Append(packet.Sequence).Append('|').Append(packet.Timestamp).Append('|');
+            foreach (var d in packet.Distances)
+            {
+                sb.Append(d.AnchorId).Append(':').Append(d.Distance.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                sb.Append(':').Append(d.Rssi ?? 0).Append(';');
+            }
+
+            var payload = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+
+            using var hmac = new System.Security.Cryptography.HMACSHA256(keyBytes);
+            var computed = hmac.ComputeHash(payload);
+
+            var received = System.Convert.FromBase64String(packet.Signature);
+            return CryptographicEquals(computed, received);
+        }
+        catch (FormatException fe)
+        {
+            _logger.LogWarning(fe, "Signature or key is not valid Base64");
+            return false;
+        }
+    }
+
+    private static bool CryptographicEquals(byte[] a, byte[] b)
+    {
+        if (a == null || b == null || a.Length != b.Length) return false;
+        var result = 0;
+        for (int i = 0; i < a.Length; i++) result |= a[i] ^ b[i];
+        return result == 0;
+    }
+
+    private async Task RecordAnomaly(int beaconId, string type, string details)
+    {
+        try
+        {
+            var anomaly = new Anomaly { BeaconId = beaconId, Type = type, Details = details, Timestamp = DateTime.UtcNow };
+            await _context.Anomalies.AddAsync(anomaly);
+            await _context.SaveChangesAsync();
+            _logger.LogWarning("Anomaly {type} for beacon {id}: {details}", type, beaconId, details);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to record anomaly for beacon {id}", beaconId);
+        }
     }
 
     /// <summary>
@@ -38,8 +109,44 @@ public class TelemetryController : ControllerBase
     [HttpPost("measurement")]
     public async Task<IActionResult> ReceiveMeasurement([FromBody] MeasurementPacketDto packet)
     {
-        try
-        {
+            try
+            {
+                // Basic authentication: check signature and sequence/timestamp (can be disabled via config)
+                if (_requireSignature)
+                {
+                    if (string.IsNullOrEmpty(packet.Signature) || !packet.Sequence.HasValue)
+                    {
+                        await RecordAnomaly(packet.BeaconId, "MissingAuth", "Missing signature or sequence");
+                        return Unauthorized("Missing signature or sequence");
+                    }
+
+                    var ok = await VerifySignatureAsync(packet);
+                    if (!ok)
+                    {
+                        await RecordAnomaly(packet.BeaconId, "InvalidSignature", "HMAC validation failed");
+                        return Unauthorized("Invalid signature");
+                    }
+
+                    // Timestamp sanity (5s drift allowed)
+                    var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                    if (Math.Abs(nowMs - packet.Timestamp) > 5000)
+                    {
+                        await RecordAnomaly(packet.BeaconId, "TimestampDrift", $"ts={packet.Timestamp}");
+                        // continue processing but log
+                        _logger.LogWarning("Timestamp drift for beacon {beacon}: {ts}", packet.BeaconId, packet.Timestamp);
+                    }
+
+                    // Sequence replay check
+                    var seq = packet.Sequence.Value;
+                    var last = _lastSequence.GetOrAdd(packet.BeaconId, -1);
+                    if (seq <= last)
+                    {
+                        await RecordAnomaly(packet.BeaconId, "SequenceReplay", $"seq={seq}, last={last}");
+                        return Conflict("Replay detected");
+                    }
+                    _lastSequence[packet.BeaconId] = seq;
+                }
+
             if (packet.Distances == null || packet.Distances.Count < 3)
             {
                 return BadRequest("Необходимо минимум 3 измерения до якорей");

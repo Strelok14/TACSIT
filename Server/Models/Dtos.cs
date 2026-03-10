@@ -24,6 +24,16 @@ public class MeasurementPacketDto
     /// Уровень батареи маяка (0-100%)
     /// </summary>
     public int? BatteryLevel { get; set; }
+    
+    /// <summary>
+    /// Последовательный номер пакета (для защиты от replay)
+    /// </summary>
+    public long? Sequence { get; set; }
+
+    /// <summary>
+    /// HMAC подпись пакета в Base64
+    /// </summary>
+    public string? Signature { get; set; }
 }
 
 /// <summary>
