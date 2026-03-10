@@ -40,7 +40,7 @@ public class TelemetryController : ControllerBase
         _hubContext = hubContext;
         _logger = logger;
         _keyStore = keyStore;
-        _requireSignature = config.GetValue<bool>("Telemetry:RequireSignature", true);
+        _requireSignature = config.GetValue<bool>("Telemetry:RequireSignature", false);
     }
 
     private async Task<bool> VerifySignatureAsync(MeasurementPacketDto packet)
