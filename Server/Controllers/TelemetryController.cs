@@ -70,7 +70,7 @@ public class TelemetryController : ControllerBase
             using var hmac = new System.Security.Cryptography.HMACSHA256(keyBytes);
             var computed = hmac.ComputeHash(payload);
 
-            var received = System.Convert.FromBase64String(packet.Signature);
+            var received = System.Convert.FromBase64String(packet.Signature!);
             return CryptographicEquals(computed, received);
         }
         catch (FormatException fe)
@@ -147,16 +147,27 @@ public class TelemetryController : ControllerBase
                     _lastSequence[packet.BeaconId] = seq;
                 }
 
-            if (packet.Distances == null || packet.Distances.Count < 3)
+            if (packet.Distances == null || packet.Distances.Count < 1)
             {
-                return BadRequest("Необходимо минимум 3 измерения до якорей");
+                return BadRequest("Необходимо минимум 1 измерение до якорей");
             }
 
-            // Проверка существования маяка
+            // Проверка существования маяка; при первом пакете создаем автоматически.
             var beacon = await _context.Beacons.FindAsync(packet.BeaconId);
             if (beacon == null)
             {
-                return NotFound($"Маяк с ID {packet.BeaconId} не найден");
+                beacon = new Beacon
+                {
+                    Id = packet.BeaconId,
+                    Name = $"Beacon_{packet.BeaconId}",
+                    BatteryLevel = packet.BatteryLevel ?? 100,
+                    Status = BeaconStatus.Active,
+                    LastSeen = DateTime.UtcNow,
+                    CreatedAt = DateTime.UtcNow
+                };
+                await _context.Beacons.AddAsync(beacon);
+                await _context.SaveChangesAsync();
+                _logger.LogInformation("Auto-registered beacon {id}", packet.BeaconId);
             }
 
             // Обновление статуса маяка

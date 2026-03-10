@@ -135,8 +135,12 @@ if (app.Environment.IsDevelopment())
 }
 else
 {
-    // HTTPS in production
-    app.UseHttpsRedirection();
+    // HTTPS redirection can be enabled when reverse proxy/cert is configured.
+    var useHttpsRedirect = builder.Configuration.GetValue<bool>("Security:UseHttpsRedirection", false);
+    if (useHttpsRedirect)
+    {
+        app.UseHttpsRedirection();
+    }
 }
 
 // Initialize database

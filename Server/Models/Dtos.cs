@@ -82,3 +82,22 @@ public class AllPositionsDto
     public DateTime Timestamp { get; set; } = DateTime.UtcNow;
     public int TotalBeacons { get; set; }
 }
+
+/// <summary>
+/// DTO для /auth/login
+/// </summary>
+public class AuthRequestDto
+{
+    public string Login { get; set; } = string.Empty;
+    public string Password { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Ответ /auth/login
+/// </summary>
+public class AuthResponseDto
+{
+    public bool Success { get; set; }
+    public string Token { get; set; } = string.Empty;
+    public string Message { get; set; } = string.Empty;
+}
