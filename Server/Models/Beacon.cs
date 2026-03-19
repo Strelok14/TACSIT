@@ -42,6 +42,12 @@ public class Beacon
     /// </summary>
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
+    /// <summary>
+    /// Активная версия криптографического ключа маяка
+    /// </summary>
+    [Range(1, int.MaxValue)]
+    public int KeyVersion { get; set; } = 1;
+
     // Navigation properties
     public ICollection<Measurement> Measurements { get; set; } = new List<Measurement>();
     public ICollection<Position> Positions { get; set; } = new List<Position>();

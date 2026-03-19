@@ -2,6 +2,8 @@ package com.example.tacsit.network;
 
 import retrofit2.Retrofit;
 import retrofit2.converter.gson.GsonConverterFactory;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
 
 public final class AuthServiceFactory {
 
@@ -17,8 +19,27 @@ public final class AuthServiceFactory {
 
     public static Retrofit createRetrofit(String serverInput) {
         String baseUrl = normalizeBaseUrl(serverInput);
+
+        OkHttpClient client = new OkHttpClient.Builder()
+                .addInterceptor(chain -> {
+                    Request request = chain.request();
+                    String token = SessionManager.getAccessToken();
+
+                    if (token == null || token.isBlank()) {
+                        return chain.proceed(request);
+                    }
+
+                    Request secured = request.newBuilder()
+                            .addHeader("Authorization", "Bearer " + token)
+                            .build();
+
+                    return chain.proceed(secured);
+                })
+                .build();
+
         return new Retrofit.Builder()
                 .baseUrl(baseUrl)
+                .client(client)
                 .addConverterFactory(GsonConverterFactory.create())
                 .build();
     }
@@ -26,7 +47,8 @@ public final class AuthServiceFactory {
     private static String normalizeBaseUrl(String value) {
         String raw = value == null ? "" : value.trim();
         if (!raw.startsWith("http://") && !raw.startsWith("https://")) {
-            raw = "http://" + raw;
+            // По умолчанию используем защищённый протокол.
+            raw = "https://" + raw;
         }
 
         int schemeEnd = raw.indexOf("://");

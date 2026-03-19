@@ -41,6 +41,11 @@ public class Measurement
     public DateTime Timestamp { get; set; } = DateTime.UtcNow;
 
     /// <summary>
+    /// Sequence исходного пакета (для дедупликации backlog)
+    /// </summary>
+    public long? PacketSequence { get; set; }
+
+    /// <summary>
     /// Качество измерения (0.0-1.0), опционально
     /// </summary>
     [Range(0.0, 1.0)]

@@ -19,6 +19,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<Measurement> Measurements { get; set; } = null!;
     public DbSet<Position> Positions { get; set; } = null!;
     public DbSet<Anomaly> Anomalies { get; set; } = null!;
+    public DbSet<BeaconSecret> BeaconSecrets { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -46,6 +47,7 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.MacAddress).HasMaxLength(17);
             entity.Property(e => e.BatteryLevel).HasDefaultValue(100);
             entity.Property(e => e.Status).HasDefaultValue(BeaconStatus.Active);
+            entity.Property(e => e.KeyVersion).HasDefaultValue(1);
             entity.HasIndex(e => e.MacAddress).IsUnique();
         });
 
@@ -55,6 +57,7 @@ public class ApplicationDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Distance).IsRequired();
             entity.Property(e => e.Timestamp).IsRequired();
+            entity.Property(e => e.PacketSequence).IsRequired(false);
             
             entity.HasOne(e => e.Beacon)
                 .WithMany(b => b.Measurements)
@@ -69,6 +72,7 @@ public class ApplicationDbContext : DbContext
             // Index for faster queries by beacon and timestamp
             entity.HasIndex(e => new { e.BeaconId, e.Timestamp });
             entity.HasIndex(e => e.Timestamp);
+            entity.HasIndex(e => new { e.BeaconId, e.PacketSequence }).IsUnique();
         });
 
         // Position configuration
@@ -101,6 +105,26 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.Timestamp).IsRequired();
             entity.HasIndex(e => e.BeaconId);
             entity.HasIndex(e => e.Timestamp);
+        });
+
+        // BeaconSecret configuration
+        modelBuilder.Entity<BeaconSecret>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.KeyVersion).IsRequired();
+            entity.Property(e => e.Ciphertext).IsRequired();
+            entity.Property(e => e.Nonce).IsRequired();
+            entity.Property(e => e.Tag).IsRequired();
+            entity.Property(e => e.IsActive).HasDefaultValue(false);
+            entity.Property(e => e.CreatedAtUtc).IsRequired();
+
+            entity.HasOne(e => e.Beacon)
+                .WithMany()
+                .HasForeignKey(e => e.BeaconId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(e => new { e.BeaconId, e.KeyVersion }).IsUnique();
+            entity.HasIndex(e => new { e.BeaconId, e.IsActive });
         });
 
         // Seed initial data (optional)

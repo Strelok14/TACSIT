@@ -14,6 +14,7 @@ import com.example.tacsit.network.AuthApi;
 import com.example.tacsit.network.AuthRequest;
 import com.example.tacsit.network.AuthResponse;
 import com.example.tacsit.network.AuthServiceFactory;
+import com.example.tacsit.network.SessionManager;
 
 import retrofit2.Call;
 import retrofit2.Callback;
@@ -77,6 +78,7 @@ public class MainActivity extends AppCompatActivity {
 
                 AuthResponse body = response.body();
                 if (body != null && body.isSuccess()) {
+                    SessionManager.setSession(body.getToken(), body.getRole());
                     openMenuScreen(serverIp);
                     return;
                 }

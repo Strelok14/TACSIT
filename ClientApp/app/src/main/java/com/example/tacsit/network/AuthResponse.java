@@ -13,6 +13,9 @@ public class AuthResponse {
     @SerializedName("message")
     private String message;
 
+    @SerializedName("role")
+    private String role;
+
     public boolean isSuccess() {
         return success;
     }
@@ -23,5 +26,9 @@ public class AuthResponse {
 
     public String getMessage() {
         return message;
+    }
+
+    public String getRole() {
+        return role;
     }
 }

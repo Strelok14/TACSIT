@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.AspNetCore.Authorization;
+using System.Security.Claims;
 using StrikeballServer.Models;
 
 namespace StrikeballServer.Hubs;
@@ -6,6 +8,7 @@ namespace StrikeballServer.Hubs;
 /// <summary>
 /// SignalR Hub для real-time обновлений позиций маяков
 /// </summary>
+[Authorize(Roles = "observer,player,admin")]
 public class PositioningHub : Hub
 {
     private readonly ILogger<PositioningHub> _logger;
@@ -56,6 +59,18 @@ public class PositioningHub : Hub
     /// </summary>
     public async Task SubscribeToBeacon(int beaconId)
     {
+        // Для роли player ограничиваем доступ только к своему beacon_id.
+        var role = Context.User?.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Role)?.Value;
+        var ownBeaconRaw = Context.User?.Claims.FirstOrDefault(c => c.Type == "beacon_id")?.Value;
+        if (string.Equals(role, "player", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!int.TryParse(ownBeaconRaw, out var ownBeaconId) || ownBeaconId != beaconId)
+            {
+                _logger.LogWarning("🚫 Игрок {connectionId} попытался подписаться на чужой beacon {beaconId}", Context.ConnectionId, beaconId);
+                throw new HubException("Access denied for this beacon");
+            }
+        }
+
         var groupName = $"Beacon_{beaconId}";
         await Groups.AddToGroupAsync(Context.ConnectionId, groupName);
         

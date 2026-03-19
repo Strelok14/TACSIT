@@ -1,19 +1,25 @@
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 using StrikeballServer.Data;
-using StrikeballServer.Services;
 using StrikeballServer.Hubs;
+using StrikeballServer.Middleware;
+using StrikeballServer.Services;
+using System.Security.Claims;
+using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
-    c.SwaggerDoc("v1", new() { 
-        Title = "Strikeball Positioning API", 
+    c.SwaggerDoc("v1", new()
+    {
+        Title = "Strikeball Positioning API",
         Version = "v1.0",
-        Description = "API для системы позиционирования игроков в страйкбол"
+        Description = "Защищённый API для системы позиционирования игроков в страйкбол"
     });
 });
 
@@ -23,155 +29,185 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 {
     if (builder.Environment.IsProduction())
     {
-        // Production: PostgreSQL
         var postgresConnection = builder.Configuration.GetConnectionString("PostgreSQL") ?? connectionString;
         options.UseNpgsql(postgresConnection);
-        options.EnableSensitiveDataLogging(false); // Не логируем параметры в production
+        options.EnableSensitiveDataLogging(false);
     }
     else
     {
-        // Development: SQLite (по умолчанию из DefaultConnection)
         options.UseSqlite(connectionString);
-        options.EnableSensitiveDataLogging(true); // Логируем данные в разработке
+        options.EnableSensitiveDataLogging(false);
     }
 });
 
-// SignalR for real-time communication
-builder.Services.AddSignalR();
+builder.Services.AddSignalR(options =>
+{
+    // Ограничение размера входящих сообщений Hub для снижения риска abuse.
+    options.MaximumReceiveMessageSize = 64 * 1024;
+});
 
-// CORS policy for Android/Web clients
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAll", policy =>
+    options.AddPolicy("StrictCors", policy =>
     {
-        policy.AllowAnyOrigin()
-              .AllowAnyMethod()
-              .AllowAnyHeader();
+        var origins = builder.Configuration.GetSection("Security:AllowedOrigins").Get<string[]>()
+            ?? Array.Empty<string>();
+
+        if (origins.Length == 0)
+        {
+            // Для тестовых стендов без origin-конфига сохраняем совместимость.
+            policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader();
+        }
+        else
+        {
+            policy.WithOrigins(origins).AllowAnyMethod().AllowAnyHeader();
+        }
     });
 });
 
-// Register application services
+var jwtSigningKey = builder.Configuration["Jwt:SigningKey"]
+    ?? Environment.GetEnvironmentVariable("TACID_JWT_SIGNING_KEY")
+    ?? throw new InvalidOperationException("JWT signing key is required (TACID_JWT_SIGNING_KEY)");
+
+var issuer = builder.Configuration["Jwt:Issuer"] ?? "tacid-server";
+var audience = builder.Configuration["Jwt:Audience"] ?? "tacid-clients";
+var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSigningKey));
+
+builder.Services
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.RequireHttpsMetadata = true;
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = issuer,
+            ValidateAudience = true,
+            ValidAudience = audience,
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = securityKey,
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.FromSeconds(30),
+            RoleClaimType = ClaimTypes.Role,
+            NameClaimType = ClaimTypes.Name
+        };
+
+        // Для SignalR принимаем access_token из query string.
+        options.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = context =>
+            {
+                var accessToken = context.Request.Query["access_token"];
+                var path = context.HttpContext.Request.Path;
+                if (!string.IsNullOrWhiteSpace(accessToken)
+                    && path.StartsWithSegments("/hubs/positioning", StringComparison.OrdinalIgnoreCase))
+                {
+                    context.Token = accessToken;
+                }
+                return Task.CompletedTask;
+            }
+        };
+    });
+
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("ObserverPolicy", p => p.RequireRole("observer", "admin"));
+    options.AddPolicy("PlayerPolicy", p => p.RequireRole("player", "admin"));
+    options.AddPolicy("AdminPolicy", p => p.RequireRole("admin"));
+});
+
 builder.Services.AddScoped<IPositioningService, PositioningService>();
 builder.Services.AddScoped<IFilteringService, FilteringService>();
 builder.Services.AddSingleton<ITelemetryService, TelemetryService>();
-// Beacon key store for HMAC-based authentication (reads from env or config)
-builder.Services.AddSingleton<IBeaconKeyStore, BeaconKeyStore>();
+builder.Services.AddScoped<IBeaconKeyStore, BeaconKeyStore>();
+builder.Services.AddScoped<ISecurityEventLogger, SecurityEventLogger>();
+builder.Services.AddSingleton<IReplayProtectionService, RedisReplayProtectionService>();
+builder.Services.AddSingleton<ITelemetryRateLimiter, RedisTelemetryRateLimiter>();
+builder.Services.AddHostedService<BeaconKeyRotationHostedService>();
 
-// Logging
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.KnownNetworks.Clear();
+    options.KnownProxies.Clear();
+});
+
 builder.Logging.ClearProviders();
+builder.Logging.AddConsole();
 if (builder.Environment.IsDevelopment())
 {
-    builder.Logging.AddConsole();
     builder.Logging.AddDebug();
-}
-else
-{
-    // Production: только console (переходит в systemd journal)
-    builder.Logging.AddConsole();
 }
 
 var app = builder.Build();
 
-// 🔧 Middleware для логирования запросов
-app.Use(async (context, next) =>
-{
-    var startTime = DateTime.UtcNow;
-    var request = context.Request;
-    
-    try
-    {
-        await next();
-        
-        var duration = (DateTime.UtcNow - startTime).TotalMilliseconds;
-        app.Logger.LogInformation(
-            $"✅ {request.Method} {request.Path} → {context.Response.StatusCode} ({duration:F0}ms)");
-    }
-    catch (Exception ex)
-    {
-        var duration = (DateTime.UtcNow - startTime).TotalMilliseconds;
-        app.Logger.LogError(ex, $"❌ {request.Method} {request.Path} → Exception ({duration:F0}ms)");
-        
-        // Отправляем error response
-        if (!context.Response.HasStarted)
-        {
-            context.Response.StatusCode = 500;
-            context.Response.ContentType = "application/json";
-            await context.Response.WriteAsJsonAsync(new { 
-                error = "Internal Server Error",
-                message = app.Environment.IsDevelopment() ? ex.Message : "See server logs for details"
-            });
-        }
-    }
-});
-
-// 🔧 Middleware для обработки исключений
-app.UseExceptionHandler((IApplicationBuilder errorApp) =>
+app.UseExceptionHandler(errorApp =>
 {
     errorApp.Run(async context =>
     {
-        var exceptionHandlerPathFeature = context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerPathFeature>();
-        var exception = exceptionHandlerPathFeature?.Error;
-
-        app.Logger.LogError(exception, "Необработанное исключение");
-
         context.Response.StatusCode = 500;
         context.Response.ContentType = "application/json";
-        await context.Response.WriteAsJsonAsync(new { 
-            error = "Internal Server Error",
-            message = app.Environment.IsDevelopment() ? exception?.Message : "An error occurred"
-        });
+        await context.Response.WriteAsJsonAsync(new { error = "Internal server error" });
     });
 });
 
-// Configure the HTTP request pipeline
+app.UseForwardedHeaders();
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI(c =>
     {
         c.SwaggerEndpoint("/swagger/v1/swagger.json", "Strikeball Positioning API v1.0");
-        c.RoutePrefix = string.Empty; // Swagger UI at root
+        c.RoutePrefix = string.Empty;
     });
 }
 else
 {
-    // HTTPS redirection can be enabled when reverse proxy/cert is configured.
-    var useHttpsRedirect = builder.Configuration.GetValue<bool>("Security:UseHttpsRedirection", false);
-    if (useHttpsRedirect)
-    {
-        app.UseHttpsRedirection();
-    }
+    app.UseHsts();
 }
 
-// Initialize database
-using (var scope = app.Services.CreateScope())
+app.UseHttpsRedirection();
+
+// Жёсткий запрет незащищённого внешнего HTTP-трафика.
+app.Use(async (context, next) =>
 {
-    try
+    var remoteIp = context.Connection.RemoteIpAddress;
+    var isLocal = remoteIp != null && (System.Net.IPAddress.IsLoopback(remoteIp));
+
+    if (!context.Request.IsHttps && !isLocal)
     {
-        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        app.Logger.LogInformation("📊 Инициализация базы данных...");
-        await dbContext.Database.EnsureCreatedAsync();
-        app.Logger.LogInformation("✅ База данных готова");
+        context.Response.StatusCode = StatusCodes.Status400BadRequest;
+        await context.Response.WriteAsJsonAsync(new { error = "HTTPS is required" });
+        return;
     }
-    catch (Exception ex)
-    {
-        app.Logger.LogError(ex, "❌ Ошибка при инициализации БД");
-        throw;
-    }
+
+    await next();
+});
+
+// Инициализация БД + security-миграция.
+await using (var scope = app.Services.CreateAsyncScope())
+{
+    var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    app.Logger.LogInformation("Инициализация базы данных...");
+    await dbContext.Database.EnsureCreatedAsync();
+    await SecuritySchemaMigrator.ApplyAsync(dbContext, app.Logger);
+    app.Logger.LogInformation("База данных готова");
 }
 
-app.UseCors("AllowAll");
+app.UseCors("StrictCors");
+app.UseAuthentication();
+
+// Криптографический входной фильтр телеметрии выполняется перед авторизацией.
+app.UseMiddleware<TelemetrySecurityMiddleware>();
+
 app.UseAuthorization();
 app.MapControllers();
-
-// Map SignalR hub
 app.MapHub<PositioningHub>("/hubs/positioning");
 
-// Startup info
 var environment = app.Environment.EnvironmentName;
-app.Logger.LogInformation($"🚀 Strikeball Positioning Server started [{environment}]");
-app.Logger.LogInformation($"📡 WebSocket Hub: ws://+:5000/hubs/positioning");
-app.Logger.LogInformation($"📖 Swagger UI: http://+:5000 (development only)");
-app.Logger.LogInformation($"📊 Database: {(builder.Environment.IsProduction() ? "PostgreSQL" : "SQLite")}");
+app.Logger.LogInformation("Strikeball Positioning Server started [{environment}]", environment);
+app.Logger.LogInformation("SignalR Hub (WSS): /hubs/positioning");
+app.Logger.LogInformation("Database provider: {provider}", builder.Environment.IsProduction() ? "PostgreSQL" : "SQLite");
 
 app.Run();

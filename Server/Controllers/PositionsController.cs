@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using StrikeballServer.Data;
 using StrikeballServer.Models;
@@ -10,6 +11,7 @@ namespace StrikeballServer.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
+[Authorize(Roles = "observer,player,admin")]
 public class PositionsController : ControllerBase
 {
     private readonly ApplicationDbContext _context;
@@ -69,7 +71,7 @@ public class PositionsController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Ошибка при получении позиций");
-            return StatusCode(500, new { error = ex.Message });
+            return StatusCode(500, new { error = "Internal server error" });
         }
     }
 
@@ -113,7 +115,7 @@ public class PositionsController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, $"Ошибка при получении позиции маяка {beaconId}");
-            return StatusCode(500, new { error = ex.Message });
+            return StatusCode(500, new { error = "Internal server error" });
         }
     }
 
@@ -165,7 +167,7 @@ public class PositionsController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, $"Ошибка при получении истории позиций маяка {beaconId}");
-            return StatusCode(500, new { error = ex.Message });
+            return StatusCode(500, new { error = "Internal server error" });
         }
     }
 }

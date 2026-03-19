@@ -21,15 +21,25 @@ dotnet restore
 dotnet run
 ```
 
-Сервер запустится на `http://localhost:5000`
+Сервер запускается с обязательным HTTPS (для внешних подключений).
+
+Перед запуском задайте минимум:
+
+```bash
+export TACID_JWT_SIGNING_KEY="change_me_to_very_long_random_key_32+chars"
+export TACID_MASTER_KEY_B64="<base64_of_32_bytes>"
+export TACID_ADMIN_LOGIN="admin"
+export TACID_ADMIN_PASSWORD="strong_password"
+export REDIS_CONNECTION_STRING="localhost:6379,abortConnect=false"
+```
 
 ### Swagger UI
 
-Документация API доступна по адресу: `http://localhost:5000`
+Документация API доступна по адресу: `https://localhost:5001` (или через reverse proxy).
 
 ### WebSocket Hub
 
-WebSocket подключение для real-time обновлений: `ws://localhost:5000/hubs/positioning`
+WebSocket подключение для real-time обновлений: `wss://<host>/hubs/positioning`
 
 ## 📡 API Endpoints
 
@@ -93,4 +103,10 @@ curl -X POST http://localhost:5000/api/telemetry/measurement \
 
 ## 🐧 Развертывание на Linux
 
-См. инструкции в `Docs/PROJECT_DOCUMENTATION.md`, раздел "Развертывание"
+См. инструкции в `Docs/PROJECT_DOCUMENTATION.md`, раздел "Развертывание".
+
+Для TLS через Nginx используйте:
+
+```bash
+sudo bash scripts/setup_tls_nginx.sh your-domain.example
+```

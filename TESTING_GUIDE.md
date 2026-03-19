@@ -412,7 +412,7 @@ sudo -u postgres psql -d strikeballdb -c "SELECT count(*) FROM pg_stat_activity;
 **Контакты/вопросы:**
 - Смотрите полную документацию в `Docs/PROJECT_DOCUMENTATION.md`
 - Проверьте API в `Docs/API.md`
-- Развертывание подробнее в `DEPLOYMENT_CHECKLIST.md`
+- Развертывание подробнее в `LINUX_DEPLOYMENT_STEP_BY_STEP.sh`
 
 **Дата готовности:** 5 марта 2026  
 **Версия:** 1.0 MVP ✅

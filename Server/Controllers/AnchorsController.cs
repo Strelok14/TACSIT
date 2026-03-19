@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using StrikeballServer.Data;
 using StrikeballServer.Models;
@@ -10,6 +11,7 @@ namespace StrikeballServer.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
+[Authorize(Roles = "admin")]
 public class AnchorsController : ControllerBase
 {
     private readonly ApplicationDbContext _context;
@@ -65,7 +67,7 @@ public class AnchorsController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Ошибка при создании якоря");
-            return StatusCode(500, new { error = ex.Message });
+            return StatusCode(500, new { error = "Internal server error" });
         }
     }
 
