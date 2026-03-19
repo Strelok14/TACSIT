@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.IdentityModel.JsonWebTokens;
 using StrikeballServer.Data;
 using StrikeballServer.Hubs;
 using StrikeballServer.Middleware;
@@ -18,7 +19,7 @@ builder.Services.AddSwaggerGen(c =>
     c.SwaggerDoc("v1", new()
     {
         Title = "Strikeball Positioning API",
-        Version = "v1.0",
+        Version = "v1.1",
         Description = "Защищённый API для системы позиционирования игроков в страйкбол"
     });
 });
@@ -77,7 +78,8 @@ builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
-        options.RequireHttpsMetadata = true;
+        // HTTPS обязателен только в production; в dev/testing отключаем.
+        options.RequireHttpsMetadata = builder.Environment.IsProduction();
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
@@ -92,9 +94,9 @@ builder.Services
             NameClaimType = ClaimTypes.Name
         };
 
-        // Для SignalR принимаем access_token из query string.
         options.Events = new JwtBearerEvents
         {
+            // Для SignalR принимаем access_token из query string.
             OnMessageReceived = context =>
             {
                 var accessToken = context.Request.Query["access_token"];
@@ -105,6 +107,21 @@ builder.Services
                     context.Token = accessToken;
                 }
                 return Task.CompletedTask;
+            },
+
+            // Проверяем JTI в denylist после успешной валидации подписи.
+            OnTokenValidated = async context =>
+            {
+                var jti = context.Principal?.FindFirstValue(JwtRegisteredClaimNames.Jti);
+                if (!string.IsNullOrEmpty(jti))
+                {
+                    var denylist = context.HttpContext.RequestServices
+                        .GetRequiredService<IJwtDenylistService>();
+                    if (await denylist.IsDeniedAsync(jti, context.HttpContext.RequestAborted))
+                    {
+                        context.Fail("Token has been revoked");
+                    }
+                }
             }
         };
     });
@@ -123,6 +140,7 @@ builder.Services.AddScoped<IBeaconKeyStore, BeaconKeyStore>();
 builder.Services.AddScoped<ISecurityEventLogger, SecurityEventLogger>();
 builder.Services.AddSingleton<IReplayProtectionService, RedisReplayProtectionService>();
 builder.Services.AddSingleton<ITelemetryRateLimiter, RedisTelemetryRateLimiter>();
+builder.Services.AddSingleton<IJwtDenylistService, RedisJwtDenylistService>();
 builder.Services.AddHostedService<BeaconKeyRotationHostedService>();
 
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
@@ -169,21 +187,24 @@ else
 
 app.UseHttpsRedirection();
 
-// Жёсткий запрет незащищённого внешнего HTTP-трафика.
-app.Use(async (context, next) =>
+// Жёсткий запрет незащищённого HTTP — только в production.
+if (app.Environment.IsProduction())
 {
-    var remoteIp = context.Connection.RemoteIpAddress;
-    var isLocal = remoteIp != null && (System.Net.IPAddress.IsLoopback(remoteIp));
-
-    if (!context.Request.IsHttps && !isLocal)
+    app.Use(async (context, next) =>
     {
-        context.Response.StatusCode = StatusCodes.Status400BadRequest;
-        await context.Response.WriteAsJsonAsync(new { error = "HTTPS is required" });
-        return;
-    }
+        var remoteIp = context.Connection.RemoteIpAddress;
+        var isLocal = remoteIp != null && System.Net.IPAddress.IsLoopback(remoteIp);
 
-    await next();
-});
+        if (!context.Request.IsHttps && !isLocal)
+        {
+            context.Response.StatusCode = StatusCodes.Status400BadRequest;
+            await context.Response.WriteAsJsonAsync(new { error = "HTTPS is required" });
+            return;
+        }
+
+        await next();
+    });
+}
 
 // Инициализация БД + security-миграция.
 await using (var scope = app.Services.CreateAsyncScope())
@@ -191,7 +212,10 @@ await using (var scope = app.Services.CreateAsyncScope())
     var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
     app.Logger.LogInformation("Инициализация базы данных...");
     await dbContext.Database.EnsureCreatedAsync();
-    await SecuritySchemaMigrator.ApplyAsync(dbContext, app.Logger);
+    if (!app.Environment.IsEnvironment("Testing"))
+    {
+        await SecuritySchemaMigrator.ApplyAsync(dbContext, app.Logger);
+    }
     app.Logger.LogInformation("База данных готова");
 }
 
@@ -211,3 +235,6 @@ app.Logger.LogInformation("SignalR Hub (WSS): /hubs/positioning");
 app.Logger.LogInformation("Database provider: {provider}", builder.Environment.IsProduction() ? "PostgreSQL" : "SQLite");
 
 app.Run();
+
+// Делаем Program доступным для WebApplicationFactory в интеграционных тестах.
+public partial class Program { }

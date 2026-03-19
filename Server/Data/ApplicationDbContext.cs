@@ -20,6 +20,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<Position> Positions { get; set; } = null!;
     public DbSet<Anomaly> Anomalies { get; set; } = null!;
     public DbSet<BeaconSecret> BeaconSecrets { get; set; } = null!;
+    public DbSet<RefreshToken> RefreshTokens { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -72,7 +73,9 @@ public class ApplicationDbContext : DbContext
             // Index for faster queries by beacon and timestamp
             entity.HasIndex(e => new { e.BeaconId, e.Timestamp });
             entity.HasIndex(e => e.Timestamp);
-            entity.HasIndex(e => new { e.BeaconId, e.PacketSequence }).IsUnique();
+            // Один пакет содержит несколько строк (по числу anchors),
+            // поэтому уникальность должна учитывать AnchorId.
+            entity.HasIndex(e => new { e.BeaconId, e.PacketSequence, e.AnchorId }).IsUnique();
         });
 
         // Position configuration
@@ -125,6 +128,19 @@ public class ApplicationDbContext : DbContext
 
             entity.HasIndex(e => new { e.BeaconId, e.KeyVersion }).IsUnique();
             entity.HasIndex(e => new { e.BeaconId, e.IsActive });
+        });
+
+        // RefreshToken configuration
+        modelBuilder.Entity<RefreshToken>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.UserId).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.Token).IsRequired().HasMaxLength(256);
+            entity.Property(e => e.ExpiryUtc).IsRequired();
+            entity.Property(e => e.IsRevoked).HasDefaultValue(false);
+            entity.Property(e => e.CreatedAtUtc).IsRequired();
+            entity.HasIndex(e => e.Token).IsUnique();
+            entity.HasIndex(e => new { e.UserId, e.IsRevoked });
         });
 
         // Seed initial data (optional)

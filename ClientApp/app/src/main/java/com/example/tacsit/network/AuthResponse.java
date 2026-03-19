@@ -16,6 +16,12 @@ public class AuthResponse {
     @SerializedName("role")
     private String role;
 
+    @SerializedName("refreshToken")
+    private String refreshToken;
+
+    @SerializedName("refreshExpiresAtUtc")
+    private String refreshExpiresAtUtc;
+
     public boolean isSuccess() {
         return success;
     }
@@ -31,4 +37,13 @@ public class AuthResponse {
     public String getRole() {
         return role;
     }
+
+    public String getRefreshToken() {
+        return refreshToken;
+    }
+
+    public String getRefreshExpiresAtUtc() {
+        return refreshExpiresAtUtc;
+    }
 }
+

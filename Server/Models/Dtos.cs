@@ -112,7 +112,7 @@ public class AuthRequestDto
 }
 
 /// <summary>
-/// Ответ /auth/login
+/// Ответ /auth/login и /auth/refresh
 /// </summary>
 public class AuthResponseDto
 {
@@ -121,4 +121,23 @@ public class AuthResponseDto
     public string Message { get; set; } = string.Empty;
     public string Role { get; set; } = string.Empty;
     public DateTime? ExpiresAtUtc { get; set; }
+    public string? RefreshToken { get; set; }
+    public DateTime? RefreshExpiresAtUtc { get; set; }
+}
+
+/// <summary>
+/// Запрос /auth/refresh — передаётся действующий refresh-токен.
+/// </summary>
+public class RefreshRequestDto
+{
+    [Required(ErrorMessage = "RefreshToken обязателен")]
+    public string RefreshToken { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Запрос /auth/logout — опционально передаётся refresh-токен для принудительного отзыва.
+/// </summary>
+public class LogoutRequestDto
+{
+    public string? RefreshToken { get; set; }
 }

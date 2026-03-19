@@ -6,6 +6,13 @@ import retrofit2.http.POST;
 
 public interface AuthApi {
 
-    @POST("auth/login")
+    @POST("api/auth/login")
     Call<AuthResponse> login(@Body AuthRequest request);
+
+    @POST("api/auth/refresh")
+    Call<AuthResponse> refresh(@Body RefreshRequest request);
+
+    @POST("api/auth/logout")
+    Call<Void> logout(@Body LogoutRequest request);
 }
+
