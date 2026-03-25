@@ -101,6 +101,10 @@ curl -X POST http://localhost:5000/api/telemetry/measurement \
 
 Полная документация проекта находится в `Docs/PROJECT_DOCUMENTATION.md`
 
+Краткая инструкция для ручного теста с ПК и телефона: `Docs/QUICK_MANUAL_TEST.md`
+
+One-page версия для боевого прогона: `Docs/QUICK_MANUAL_TEST_ONEPAGE.md`
+
 ## 🐧 Развертывание на Linux
 
 См. инструкции в `Docs/PROJECT_DOCUMENTATION.md`, раздел "Развертывание".
