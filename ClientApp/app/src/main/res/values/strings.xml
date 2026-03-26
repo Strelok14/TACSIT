@@ -57,4 +57,8 @@
     <string name="ai_status_answer_applied">Status: answer applied, WebRTC session active</string>
     <string name="ai_status_disconnected">Status: disconnected</string>
     <string name="ai_status_error">Status: %1$s</string>
+    <string name="ai_status_upload_disabled">Status: observation upload disabled (server not set)</string>
+    <string name="ai_status_upload_failed">Status: observations not accepted by server yet</string>
+    <string name="ai_status_local_starting">Status: starting local on-device AI</string>
+    <string name="ai_status_local_streaming">Status: local AI running, detections: %1$d</string>
 </resources>

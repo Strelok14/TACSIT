@@ -1,16 +1,20 @@
 package com.example.tacsit.ai;
 
 import android.Manifest;
+import android.content.Context;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.text.TextUtils;
+import android.view.View;
 import android.widget.TextView;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.camera.view.PreviewView;
 import androidx.core.content.ContextCompat;
 
 import com.example.tacsit.MeasurementActivity;
@@ -34,13 +38,18 @@ public final class AiCameraActivity extends AppCompatActivity {
     private final ActivityResultLauncher<String> cameraPermissionLauncher =
             registerForActivityResult(new ActivityResultContracts.RequestPermission(), isGranted -> {
                 if (isGranted) {
+                    requestLocationPermissionIfNeeded();
                     startAiSession();
                     return;
                 }
                 updateStatus(getString(R.string.ai_status_camera_permission_denied));
             });
 
+    private final ActivityResultLauncher<String> locationPermissionLauncher =
+            registerForActivityResult(new ActivityResultContracts.RequestPermission(), this::onLocationPermissionResult);
+
     private SurfaceViewRenderer surfaceViewRenderer;
+    private PreviewView previewView;
     private OverlayView overlayView;
     private TextInputEditText signalUrlEditText;
     private TextView statusTextView;
@@ -48,6 +57,13 @@ public final class AiCameraActivity extends AppCompatActivity {
     private EglBase eglBase;
     private WebRtcClient webRtcClient;
     private SignalingClient signalingClient;
+    private DevicePoseTracker poseTracker;
+    private AiObservationUploader observationUploader;
+    private OnDeviceAiController onDeviceAiController;
+    private String deviceId;
+    private boolean uploadWarningShown;
+    private long lastObservationUploadAtMs;
+    private String serverIp;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -55,6 +71,7 @@ public final class AiCameraActivity extends AppCompatActivity {
         setContentView(R.layout.activity_ai_camera);
 
         surfaceViewRenderer = findViewById(R.id.aiSurfaceView);
+        previewView = findViewById(R.id.aiPreviewView);
         overlayView = findViewById(R.id.aiOverlayView);
         signalUrlEditText = findViewById(R.id.signalUrlEditText);
         statusTextView = findViewById(R.id.aiStatusTextView);
@@ -66,9 +83,41 @@ public final class AiCameraActivity extends AppCompatActivity {
         surfaceViewRenderer.setEnableHardwareScaler(true);
         surfaceViewRenderer.setMirror(false);
 
-        String serverIp = getIntent().getStringExtra(MeasurementActivity.EXTRA_SERVER_IP);
+        serverIp = getIntent().getStringExtra(MeasurementActivity.EXTRA_SERVER_IP);
+        poseTracker = new DevicePoseTracker(this);
+        deviceId = resolveDeviceId(this);
+
+        if (!TextUtils.isEmpty(serverIp) && !"test".equalsIgnoreCase(serverIp.trim())) {
+            try {
+                observationUploader = new AiObservationUploader(serverIp, () -> runOnUiThread(() -> {
+                    if (!uploadWarningShown) {
+                        uploadWarningShown = true;
+                        updateStatus(getString(R.string.ai_status_upload_failed));
+                    }
+                }));
+            } catch (IllegalArgumentException exception) {
+                updateStatus(getString(R.string.ai_status_upload_disabled));
+            }
+        }
+
         signalUrlEditText.setText(buildDefaultSignalUrl(serverIp));
         updateStatus(getString(R.string.ai_status_idle));
+
+        onDeviceAiController = new OnDeviceAiController(this, new OnDeviceAiController.Listener() {
+            @Override
+            public void onDetections(int frameWidth, int frameHeight, List<AiDetection> detections) {
+                runOnUiThread(() -> {
+                    overlayView.updateDetections(frameWidth, frameHeight, detections);
+                    maybeUploadObservations(frameWidth, frameHeight, detections);
+                    updateStatus(getString(R.string.ai_status_local_streaming, detections.size()));
+                });
+            }
+
+            @Override
+            public void onError(String message, Throwable throwable) {
+                runOnUiThread(() -> updateStatus(getString(R.string.ai_status_error, describeError(message, throwable))));
+            }
+        });
 
         connectButton.setOnClickListener(view -> ensureCameraAndConnect());
         disconnectButton.setOnClickListener(view -> stopAiSession(getString(R.string.ai_status_disconnected)));
@@ -77,6 +126,12 @@ public final class AiCameraActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         stopAiSession(null);
+        if (poseTracker != null) {
+            poseTracker.stop();
+        }
+        if (onDeviceAiController != null) {
+            onDeviceAiController.release();
+        }
         if (surfaceViewRenderer != null) {
             surfaceViewRenderer.release();
         }
@@ -88,6 +143,7 @@ public final class AiCameraActivity extends AppCompatActivity {
 
     private void ensureCameraAndConnect() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+            requestLocationPermissionIfNeeded();
             startAiSession();
             return;
         }
@@ -96,6 +152,12 @@ public final class AiCameraActivity extends AppCompatActivity {
 
     private void startAiSession() {
         String signalingUrl = textOf(signalUrlEditText);
+
+        if (isLocalMode(signalingUrl)) {
+            startLocalAiSession();
+            return;
+        }
+
         if (TextUtils.isEmpty(signalingUrl) || !isValidWsUrl(signalingUrl)) {
             updateStatus(getString(R.string.ai_status_invalid_url));
             return;
@@ -103,7 +165,13 @@ public final class AiCameraActivity extends AppCompatActivity {
 
         stopAiSession(null);
         overlayView.clear();
+        uploadWarningShown = false;
         updateStatus(getString(R.string.ai_status_connecting));
+        setRemotePreviewMode();
+
+        if (poseTracker != null) {
+            poseTracker.start(this);
+        }
 
         webRtcClient = new WebRtcClient(getApplicationContext(), eglBase, surfaceViewRenderer, new WebRtcClient.Listener() {
             @Override
@@ -166,6 +234,9 @@ public final class AiCameraActivity extends AppCompatActivity {
     }
 
     private void stopAiSession(String statusMessage) {
+        if (onDeviceAiController != null) {
+            onDeviceAiController.stop();
+        }
         if (signalingClient != null) {
             signalingClient.close();
             signalingClient = null;
@@ -174,9 +245,27 @@ public final class AiCameraActivity extends AppCompatActivity {
             webRtcClient.release();
             webRtcClient = null;
         }
+        if (poseTracker != null) {
+            poseTracker.stop();
+        }
         overlayView.clear();
         if (statusMessage != null) {
             updateStatus(statusMessage);
+        }
+    }
+
+    private void startLocalAiSession() {
+        stopAiSession(null);
+        overlayView.clear();
+        uploadWarningShown = false;
+        setLocalPreviewMode();
+        updateStatus(getString(R.string.ai_status_local_starting));
+
+        if (poseTracker != null) {
+            poseTracker.start(this);
+        }
+        if (onDeviceAiController != null) {
+            onDeviceAiController.start(previewView);
         }
     }
 
@@ -208,10 +297,60 @@ public final class AiCameraActivity extends AppCompatActivity {
                 }
             }
             overlayView.updateDetections(frameWidth, frameHeight, detections);
+
+            maybeUploadObservations(frameWidth, frameHeight, detections);
             updateStatus(getString(R.string.ai_status_streaming, detections.size()));
         } catch (JSONException exception) {
             updateStatus(getString(R.string.ai_status_error, describeError("Failed to parse detections", exception)));
         }
+    }
+
+    private void maybeUploadObservations(int frameWidth, int frameHeight, List<AiDetection> detections) {
+        if (observationUploader == null || poseTracker == null || detections.isEmpty()) {
+            return;
+        }
+
+        long now = System.currentTimeMillis();
+        if (now - lastObservationUploadAtMs < 400L) {
+            return;
+        }
+        lastObservationUploadAtMs = now;
+
+        DevicePoseTracker.Snapshot snapshot = poseTracker.snapshot();
+        List<AiObservation> observations = AiObservationEstimator.buildObservations(
+                deviceId,
+                snapshot,
+                frameWidth,
+                frameHeight,
+                detections
+        );
+        observationUploader.send(observations);
+    }
+
+    private void requestLocationPermissionIfNeeded() {
+        if (hasLocationPermission()) {
+            return;
+        }
+        locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION);
+    }
+
+    private void onLocationPermissionResult(boolean isGranted) {
+        if (isGranted && poseTracker != null) {
+            poseTracker.start(this);
+        }
+    }
+
+    private boolean hasLocationPermission() {
+        return ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                || ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private String resolveDeviceId(Context context) {
+        String androidId = Settings.Secure.getString(context.getContentResolver(), Settings.Secure.ANDROID_ID);
+        if (androidId == null || androidId.isBlank()) {
+            return "unknown-device";
+        }
+        return androidId;
     }
 
     private String buildDefaultSignalUrl(String serverInput) {
@@ -249,6 +388,21 @@ public final class AiCameraActivity extends AppCompatActivity {
         Uri uri = Uri.parse(url);
         String scheme = uri.getScheme();
         return uri.getHost() != null && ("ws".equalsIgnoreCase(scheme) || "wss".equalsIgnoreCase(scheme));
+    }
+
+    private boolean isLocalMode(String value) {
+        String normalized = value == null ? "" : value.trim().toLowerCase(Locale.US);
+        return "local".equals(normalized) || normalized.startsWith("local://");
+    }
+
+    private void setLocalPreviewMode() {
+        surfaceViewRenderer.setVisibility(View.GONE);
+        previewView.setVisibility(View.VISIBLE);
+    }
+
+    private void setRemotePreviewMode() {
+        previewView.setVisibility(View.GONE);
+        surfaceViewRenderer.setVisibility(View.VISIBLE);
     }
 
     private void updateStatus(@NonNull String message) {

@@ -10,6 +10,12 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
+    <androidx.camera.view.PreviewView
+        android:id="@+id/aiPreviewView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone" />
+
     <com.example.tacsit.ai.OverlayView
         android:id="@+id/aiOverlayView"
         android:layout_width="match_parent"
