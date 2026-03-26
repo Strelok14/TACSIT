@@ -1,7 +1,7 @@
 [Unit]
 Description=Strikeball Positioning Server
 Documentation=https://github.com/strikeballserver
-After=network.target postgresql.service
+After=network.target postgresql.service redis-server.service
 
 [Service]
 Type=simple
@@ -31,7 +31,7 @@ TimeoutStopSec=30
 
 # Переменные окружения (не-секретные)
 Environment="ASPNETCORE_ENVIRONMENT=Production"
-Environment="ASPNETCORE_URLS=http://0.0.0.0:5000"
+Environment="ASPNETCORE_URLS=http://0.0.0.0:5001"
 Environment="DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1"
 
 # Секреты — в отдельном файле /etc/strikeball/environment (права 640, владелец root:strikeball)

@@ -78,7 +78,7 @@ public class MainActivity extends AppCompatActivity {
 
                 AuthResponse body = response.body();
                 if (body != null && body.isSuccess()) {
-                    SessionManager.setSession(body.getToken(), body.getRefreshToken(), body.getRole());
+                    SessionManager.setSession(body.getToken(), body.getRefreshToken(), body.getRole(), serverIp);
                     openMenuScreen(serverIp);
                     return;
                 }

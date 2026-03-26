@@ -42,6 +42,13 @@ dependencies {
     implementation("com.squareup.retrofit2:retrofit:2.11.0")
     implementation("com.squareup.retrofit2:converter-gson:2.11.0")
     implementation("org.osmdroid:osmdroid-android:6.1.18")
+    
+    // SignalR для real-time обновлений позиций
+    implementation("com.microsoft.signalr:signalr:8.0.0")
+    
+    // EncryptedSharedPreferences для persistence сессии
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+    
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

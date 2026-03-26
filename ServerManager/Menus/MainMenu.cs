@@ -56,7 +56,7 @@ internal static class MainMenu
                 case 8: ShowExport(config); ConsoleUI.PressAnyKey(); break;
                 case 0:
                     if (HasUnsavedWarnings(config, envFilePath))
-                        return;
+                        continue;
                     return;
             }
         }
@@ -147,8 +147,13 @@ internal static class MainMenu
 
     private static bool HasUnsavedWarnings(EnvConfig config, string path)
     {
-        // Для простоты всегда разрешаем выход.
-        // При необходимости можно добавить отслеживание «грязного» state.
-        return false;
+        if (!config.IsDirty)
+            return false;
+
+        ConsoleUI.Warning("Есть несохранённые изменения конфигурации.");
+        ConsoleUI.Info($"Файл: {path}");
+
+        var exitWithoutSave = ConsoleUI.Confirm("Выйти без сохранения?", defaultYes: false);
+        return !exitWithoutSave;
     }
 }

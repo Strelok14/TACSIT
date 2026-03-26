@@ -12,6 +12,7 @@ namespace TacidManager.Core;
 internal sealed class EnvConfig
 {
     private readonly List<RawLine> _lines = new();
+    public bool IsDirty { get; private set; }
 
     // ═══ Криптографические ключи ══════════════════════════════════════════
 
@@ -67,14 +68,26 @@ internal sealed class EnvConfig
         var idx = _lines.FindLastIndex(l => l.Key == key);
         var raw = $"{key}={value}";
         if (idx >= 0)
+        {
+            var current = _lines[idx];
+            if (string.Equals(current.Value, value, StringComparison.Ordinal))
+                return;
+
             _lines[idx] = new RawLine(raw, key, value);
+            IsDirty = true;
+        }
         else
+        {
             _lines.Add(new RawLine(raw, key, value));
+            IsDirty = true;
+        }
     }
 
     internal void Remove(string key)
     {
-        _lines.RemoveAll(l => l.Key == key);
+        var removed = _lines.RemoveAll(l => l.Key == key);
+        if (removed > 0)
+            IsDirty = true;
     }
 
     // ─── Загрузка / Сохранение ────────────────────────────────────────────
@@ -84,6 +97,7 @@ internal sealed class EnvConfig
         var cfg = new EnvConfig();
         foreach (var line in File.ReadAllLines(path, Encoding.UTF8))
             cfg._lines.Add(ParseLine(line));
+        cfg.IsDirty = false;
         return cfg;
     }
 
@@ -93,7 +107,16 @@ internal sealed class EnvConfig
         if (!string.IsNullOrEmpty(dir))
             Directory.CreateDirectory(dir);
 
-        File.WriteAllLines(path, _lines.Select(l => l.Raw), Encoding.UTF8);
+        var targetDir = string.IsNullOrEmpty(dir)
+            ? Directory.GetCurrentDirectory()
+            : dir;
+        var tempPath = Path.Combine(targetDir, $".{Path.GetFileName(path)}.tmp.{Guid.NewGuid():N}");
+
+        File.WriteAllLines(tempPath, _lines.Select(l => l.Raw), Encoding.UTF8);
+
+        // Move в пределах одного каталога даёт атомарную замену на поддерживаемых ФС.
+        File.Move(tempPath, path, overwrite: true);
+        IsDirty = false;
     }
 
     // ─── Шаблон новой конфигурации ────────────────────────────────────────

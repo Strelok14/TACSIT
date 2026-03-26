@@ -1,6 +1,7 @@
 using TacidManager.Core;
 using TacidManager.Menus;
 using TacidManager.UI;
+using System.Runtime.InteropServices;
 
 // ─── Точка входа ──────────────────────────────────────────────────────────────
 
@@ -84,4 +85,19 @@ static string ResolveEnvFilePath(string[] args)
 }
 
 static bool IsRunningAsRoot()
-    => OperatingSystem.IsLinux() && Environment.GetEnvironmentVariable("USER") == "root";
+{
+    if (!OperatingSystem.IsLinux()) return false;
+
+    try
+    {
+        return geteuid() == 0;
+    }
+    catch
+    {
+        // Fallback для сред, где P/Invoke недоступен.
+        return string.Equals(Environment.UserName, "root", StringComparison.Ordinal);
+    }
+}
+
+[DllImport("libc")]
+static extern uint geteuid();
