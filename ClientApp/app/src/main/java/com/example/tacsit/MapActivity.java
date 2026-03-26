@@ -3,6 +3,7 @@ package com.example.tacsit;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.Log;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -16,6 +17,8 @@ import com.google.gson.JsonObject;
 import com.example.tacsit.network.AuthServiceFactory;
 import com.example.tacsit.network.MapApi;
 import com.example.tacsit.network.MapPoint;
+import com.example.tacsit.network.PositioningHubClient;
+import com.example.tacsit.network.SessionManager;
 
 import org.osmdroid.api.IMapController;
 import org.osmdroid.config.Configuration;
@@ -32,26 +35,36 @@ import retrofit2.Callback;
 import retrofit2.Response;
 import retrofit2.Retrofit;
 
-public class MapActivity extends AppCompatActivity {
+/**
+ * MapActivity — показывает карту с позициями маяков в реальном времени
+ * Использует SignalR WebSocket для efficient real-time обновлений,
+ * с HTTP polling как fallback если WebSocket недоступен.
+ */
+public class MapActivity extends AppCompatActivity implements PositioningHubClient.PositionUpdateListener {
 
     public static final String EXTRA_SERVER_IP = "extra_server_ip";
+    private static final String TAG = "MapActivity";
 
-    private static final long POLL_INTERVAL_MS = 100;
+    private static final long POLL_INTERVAL_MS = 500;  // Fallback polling (менее частый)
 
     private MapView mapView;
     private TextView connectionStatusText;
     private MapApi mapApi;
+    private PositioningHubClient hubClient;
+    
     private final Handler pollingHandler = new Handler(Looper.getMainLooper());
     private final List<Marker> markers = new ArrayList<>();
     private final Gson gson = new Gson();
+    
     private boolean isConnected;
     private boolean requestInFlight;
+    private boolean useWebSocket = false;
 
     private final Runnable pollingRunnable = new Runnable() {
         @Override
         public void run() {
-            if (!isConnected || mapApi == null) {
-                return;
+            if (!isConnected || mapApi == null || useWebSocket) {
+                return;  // Не polling если есть WebSocket
             }
             pollCoordinates();
             pollingHandler.postDelayed(this, POLL_INTERVAL_MS);
@@ -62,6 +75,7 @@ public class MapActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_map);
+        Log.d(TAG, "onCreate");
 
         Configuration.getInstance().setUserAgentValue(getPackageName());
 
@@ -87,7 +101,15 @@ public class MapActivity extends AppCompatActivity {
             Retrofit retrofit = AuthServiceFactory.createRetrofit(serverIp);
             mapApi = retrofit.create(MapApi.class);
             isConnected = true;
-            updateStatus(R.string.status_connecting);
+            
+            // Попытаемся подключиться через SignalR WebSocket
+            String token = SessionManager.getAccessToken();
+            if (token != null && !token.isEmpty()) {
+                connectWebSocket(serverIp, token);
+            } else {
+                Log.w(TAG, "Токен не найден, используем HTTP polling");
+                pollCoordinates();
+            }
         } catch (IllegalArgumentException e) {
             isConnected = false;
             updateStatus(R.string.status_server_error);
@@ -95,17 +117,51 @@ public class MapActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * Подключиться к SignalR Hub'у для real-time обновлений
+     */
+    private void connectWebSocket(String serverIp, String token) {
+        Log.d(TAG, "Попытка подключения к SignalR Hub...");
+        
+        hubClient = new PositioningHubClient(serverIp, token);
+        hubClient.addListener(this);
+
+        hubClient.connect(
+                () -> {
+                    Log.i(TAG, "✓ SignalR подключен!");
+                    useWebSocket = true;
+                    updateStatus(R.string.status_connected_websocket);
+                    
+                    // Приостанавливаем HTTP polling если WebSocket успешен
+                    pollingHandler.removeCallbacks(pollingRunnable);
+                },
+                () -> {
+                    Log.w(TAG, "✗ SignalR подключение не удалось, переходим на HTTP polling");
+                    useWebSocket = false;
+                    updateStatus(R.string.status_no_websocket_polling);
+                    
+                    // Возвращаемся на HTTP polling как fallback
+                    if (isConnected) {
+                        pollingHandler.post(pollingRunnable);
+                    }
+                }
+        );
+    }
+
     @Override
     protected void onResume() {
         super.onResume();
+        Log.d(TAG, "onResume");
         mapView.onResume();
-        if (isConnected) {
+        
+        if (isConnected && !useWebSocket) {
             pollingHandler.post(pollingRunnable);
         }
     }
 
     @Override
     protected void onPause() {
+        Log.d(TAG, "onPause");
         pollingHandler.removeCallbacks(pollingRunnable);
         mapView.onPause();
         super.onPause();
@@ -113,11 +169,23 @@ public class MapActivity extends AppCompatActivity {
 
     @Override
     protected void onDestroy() {
+        Log.d(TAG, "onDestroy");
         pollingHandler.removeCallbacks(pollingRunnable);
+        
+        // Отключаемся от WebSocket
+        if (hubClient != null) {
+            hubClient.removeListener(this);
+            hubClient.disconnect();
+            hubClient = null;
+        }
+        
         mapView.onDetach();
         super.onDestroy();
     }
 
+    /**
+     * HTTP Polling как fallback если WebSocket недоступен
+     */
     private void pollCoordinates() {
         if (requestInFlight || mapApi == null) {
             return;
@@ -149,6 +217,45 @@ public class MapActivity extends AppCompatActivity {
         });
     }
 
+    // === Implements PositionUpdateListener ===
+
+    @Override
+    public void onPositionUpdate(MapPoint position) {
+        Log.d(TAG, "📍 Позиция получена через SignalR: " + position);
+        runOnUiThread(() -> {
+            List<MapPoint> points = new ArrayList<>();
+            points.add(position);
+            renderPoints(points);
+            updateStatus(R.string.status_connected_websocket);
+        });
+    }
+
+    @Override
+    public void onConnected(String connectionId) {
+        Log.d(TAG, "🔌 Подключены к Hub, connectionId: " + connectionId);
+        runOnUiThread(() -> updateStatus(R.string.status_connected_websocket));
+    }
+
+    @Override
+    public void onDisconnected() {
+        Log.w(TAG, "🔌 Отключены от Hub");
+        useWebSocket = false;
+        runOnUiThread(() -> {
+            updateStatus(R.string.status_no_websocket_polling);
+            if (isConnected) {
+                pollingHandler.post(pollingRunnable);
+            }
+        });
+    }
+
+    @Override
+    public void onError(String message) {
+        Log.e(TAG, "⚠️ Ошибка Hub: " + message);
+        runOnUiThread(() -> Toast.makeText(this, message, Toast.LENGTH_LONG).show());
+    }
+
+    // === UI Update Methods ===
+
     private void updateStatus(int statusResId) {
         if (connectionStatusText != null) {
             connectionStatusText.setText(statusResId);
@@ -166,6 +273,8 @@ public class MapActivity extends AppCompatActivity {
                 : "no details";
         connectionStatusText.setText(getString(statusResId, reason, details));
     }
+
+    // === Parsing Methods ===
 
     private List<MapPoint> parsePoints(JsonElement root) {
         List<MapPoint> points = new ArrayList<>();
@@ -210,6 +319,8 @@ public class MapActivity extends AppCompatActivity {
         return null;
     }
 
+    // === Rendering Methods ===
+
     private void renderPoints(List<MapPoint> points) {
         for (Marker marker : markers) {
             mapView.getOverlays().remove(marker);
@@ -220,6 +331,7 @@ public class MapActivity extends AppCompatActivity {
             Marker marker = new Marker(mapView);
             marker.setPosition(new GeoPoint(point.getLat(), point.getLng()));
             marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM);
+            marker.setTitle(point.getId() != null ? point.getId() : "Unknown");
             mapView.getOverlays().add(marker);
             markers.add(marker);
         }

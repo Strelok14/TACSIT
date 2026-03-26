@@ -81,7 +81,35 @@ EOF
 
 echo "✅ PostgreSQL настроена"
 
-# 8. Установка systemd service
+# 8. Генерация файла секретов /etc/strikeball/environment
+echo "🔑 Настройка секретов..."
+mkdir -p /etc/strikeball
+chmod 750 /etc/strikeball
+
+if [ ! -f /etc/strikeball/environment ]; then
+    echo "  Генерация новых ключей..."
+    JWT_KEY=$(cat /dev/urandom | tr -dc 'A-Za-z0-9' | head -c 80)
+    cat > /etc/strikeball/environment <<ENVEOF
+# Strikeball Server — файл секретов
+# НЕ КОММИТИТЬ в git, НЕ давать права на чтение посторонним
+
+# JWT
+TACID_JWT_SIGNING_KEY=${JWT_KEY}
+
+# База данных PostgreSQL
+ConnectionStrings__PostgreSQL=Host=localhost;Database=strikeballdb;Username=strikeballuser;Password=strikeballpassword123;Port=5432;SSL Mode=Disable;
+ENVEOF
+    echo "  ✅ Ключи сгенерированы: /etc/strikeball/environment"
+else
+    echo "  ⚠️  Файл /etc/strikeball/environment уже существует — не перезаписываю."
+    echo "     Убедитесь, что TACID_JWT_SIGNING_KEY задан в нём."
+fi
+
+# Права: root владеет, группа strikeball читает, другие — ничего
+chown root:strikeball /etc/strikeball/environment
+chmod 640 /etc/strikeball/environment
+
+# 9. Установка systemd service
 echo "⚙️  Установка systemd service..."
 cp strikeball-server.service /etc/systemd/system/
 systemctl daemon-reload

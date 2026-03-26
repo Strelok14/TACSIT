@@ -44,6 +44,13 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.osmdroid:osmdroid-android:6.1.18")
     implementation("com.github.webrtc-sdk:android:v104.5112.10")
+
+    // SignalR для real-time обновлений позиций
+    implementation("com.microsoft.signalr:signalr:8.0.0")
+
+    // EncryptedSharedPreferences для persistence сессии
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

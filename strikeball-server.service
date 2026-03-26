@@ -1,7 +1,7 @@
 [Unit]
 Description=Strikeball Positioning Server
 Documentation=https://github.com/strikeballserver
-After=network.target postgresql.service
+After=network.target postgresql.service redis-server.service
 
 [Service]
 Type=simple
@@ -29,11 +29,16 @@ SyslogIdentifier=strikeball-server
 TimeoutStartSec=30
 TimeoutStopSec=30
 
-# Переменные окружения
+# Переменные окружения (не-секретные)
 Environment="ASPNETCORE_ENVIRONMENT=Production"
-Environment="ASPNETCORE_URLS=http://0.0.0.0:5000"
+Environment="ASPNETCORE_URLS=http://0.0.0.0:5001"
 Environment="DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1"
-Environment="ConnectionStrings__PostgreSQL=Host=localhost;Database=strikeballdb;Username=strikeballuser;Password=strikeballpassword123;Port=5432;SSL Mode=Disable;"
+
+# Секреты — в отдельном файле /etc/strikeball/environment (права 640, владелец root:strikeball)
+# Создаётся скриптом deploy.sh. Обязательные ключи:
+#   TACID_JWT_SIGNING_KEY   — случайная строка ≥ 64 символов
+#   ConnectionStrings__PostgreSQL — строка подключения к БД
+EnvironmentFile=/etc/strikeball/environment
 
 [Install]
 WantedBy=multi-user.target

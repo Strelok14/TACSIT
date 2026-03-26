@@ -34,10 +34,12 @@
     <string name="network_error">Ошибка сети. Проверь IP сервера</string>
     <string name="server_not_configured">Сервер не настроен для карты</string>
     <string name="status_connecting">Статус: проверка соединения…</string>
-    <string name="status_connected">Статус: подключено</string>
+    <string name="status_connected">Статус: подключено (HTTP polling)</string>
+    <string name="status_connected_websocket">Статус: подключено (WebSocket)</string>
     <string name="status_connected_no_data">Статус: подключено, данных пока нет</string>
     <string name="status_no_connection">Статус: нет связи с сервером</string>
     <string name="status_no_connection_details">Статус: нет связи (%1$s: %2$s)</string>
+    <string name="status_no_websocket_polling">Статус: WebSocket недоступен, используется polling</string>
     <string name="status_server_error">Статус: ошибка ответа сервера</string>
     <string name="status_server_not_configured">Статус: сервер не настроен</string>
     <string name="ai_title">AI detection stream</string>

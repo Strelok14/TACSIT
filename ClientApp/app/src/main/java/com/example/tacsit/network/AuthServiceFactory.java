@@ -12,6 +12,7 @@ import java.io.IOException;
 public final class AuthServiceFactory {
 
 	private static final String DEFAULT_BACKEND_PORT = "5001";
+	private static final String IPV4_REGEX = "^\\d{1,3}(\\.\\d{1,3}){3}$";
 
 	private AuthServiceFactory() {
 	}
@@ -44,7 +45,7 @@ public final class AuthServiceFactory {
 	private static String normalizeBaseUrl(String value) {
 		String raw = value == null ? "" : value.trim();
 		if (!raw.startsWith("http://") && !raw.startsWith("https://")) {
-			raw = "https://" + raw;
+			raw = shouldUseHttpByDefault(raw) ? "http://" + raw : "https://" + raw;
 		}
 		int se = raw.indexOf("://");
 		int hs = se >= 0 ? se + 3 : 0;
@@ -55,6 +56,28 @@ public final class AuthServiceFactory {
 					+ (ps >= 0 ? raw.substring(ps) : "");
 		}
 		return raw.endsWith("/") ? raw : raw + "/";
+	}
+
+	private static boolean shouldUseHttpByDefault(String raw) {
+		String host = raw;
+		int slash = host.indexOf('/');
+		if (slash >= 0) {
+			host = host.substring(0, slash);
+		}
+
+		if (host.startsWith("[") && host.endsWith("]")) {
+			return true;
+		}
+
+		int colon = host.lastIndexOf(':');
+		if (colon > 0 && host.indexOf(':') == colon) {
+			host = host.substring(0, colon);
+		}
+
+		String lower = host.toLowerCase();
+		return "localhost".equals(lower)
+				|| lower.matches(IPV4_REGEX)
+				|| lower.endsWith(".local");
 	}
 
 	/**

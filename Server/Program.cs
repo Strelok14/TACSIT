@@ -12,6 +12,13 @@ using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
+var allowInsecureHttp = builder.Configuration.GetValue<bool>("Security:AllowInsecureHttp")
+    || string.Equals(
+        Environment.GetEnvironmentVariable("TACID_ALLOW_INSECURE_HTTP"),
+        "true",
+        StringComparison.OrdinalIgnoreCase);
+var requireHttps = builder.Environment.IsProduction() && !allowInsecureHttp;
+
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
@@ -79,7 +86,7 @@ builder.Services
     .AddJwtBearer(options =>
     {
         // HTTPS обязателен только в production; в dev/testing отключаем.
-        options.RequireHttpsMetadata = builder.Environment.IsProduction();
+        options.RequireHttpsMetadata = requireHttps;
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
@@ -182,13 +189,19 @@ if (app.Environment.IsDevelopment())
 }
 else
 {
-    app.UseHsts();
+    if (requireHttps)
+    {
+        app.UseHsts();
+    }
 }
 
-app.UseHttpsRedirection();
+if (requireHttps)
+{
+    app.UseHttpsRedirection();
+}
 
 // Жёсткий запрет незащищённого HTTP — только в production.
-if (app.Environment.IsProduction())
+if (requireHttps)
 {
     app.Use(async (context, next) =>
     {
@@ -231,7 +244,8 @@ app.MapHub<PositioningHub>("/hubs/positioning");
 
 var environment = app.Environment.EnvironmentName;
 app.Logger.LogInformation("Strikeball Positioning Server started [{environment}]", environment);
-app.Logger.LogInformation("SignalR Hub (WSS): /hubs/positioning");
+app.Logger.LogInformation("SignalR Hub endpoint: /hubs/positioning");
+app.Logger.LogInformation("HTTPS enforcement: {mode}", requireHttps ? "enabled" : "disabled (LAN/VPN mode)");
 app.Logger.LogInformation("Database provider: {provider}", builder.Environment.IsProduction() ? "PostgreSQL" : "SQLite");
 
 app.Run();
