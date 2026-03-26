@@ -11,6 +11,7 @@
     <string name="menu_title">Следующее меню</string>
     <string name="open_map">Карта</string>
     <string name="open_measurement">Отправка координат</string>
+    <string name="open_ai_camera">AI camera</string>
     <string name="measurement_title">Отправка Measurements</string>
     <string name="measurement_beacon_id">BeaconId</string>
     <string name="measurement_anchor_id">AnchorId</string>
@@ -39,4 +40,19 @@
     <string name="status_no_connection_details">Статус: нет связи (%1$s: %2$s)</string>
     <string name="status_server_error">Статус: ошибка ответа сервера</string>
     <string name="status_server_not_configured">Статус: сервер не настроен</string>
+    <string name="ai_title">AI detection stream</string>
+    <string name="ai_signal_url_label">Signaling WebSocket URL</string>
+    <string name="ai_signal_url_hint">ws://192.168.0.10:8080/ws</string>
+    <string name="ai_connect">Connect</string>
+    <string name="ai_disconnect">Disconnect</string>
+    <string name="ai_status_idle">Status: idle</string>
+    <string name="ai_status_camera_permission_denied">Status: camera permission denied</string>
+    <string name="ai_status_invalid_url">Status: invalid WebSocket URL</string>
+    <string name="ai_status_connecting">Status: connecting to signaling and camera</string>
+    <string name="ai_status_signaling_ready">Status: signaling connected, creating offer</string>
+    <string name="ai_status_offer_sent">Status: offer sent, waiting for answer</string>
+    <string name="ai_status_streaming">Status: streaming, detections: %1$d</string>
+    <string name="ai_status_answer_applied">Status: answer applied, WebRTC session active</string>
+    <string name="ai_status_disconnected">Status: disconnected</string>
+    <string name="ai_status_error">Status: %1$s</string>
 </resources>

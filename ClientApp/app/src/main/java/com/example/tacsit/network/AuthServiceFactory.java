@@ -1,4 +1,4 @@
-﻿package com.example.tacsit.network;
+package com.example.tacsit.network;
 
 import retrofit2.Retrofit;
 import retrofit2.converter.gson.GsonConverterFactory;
