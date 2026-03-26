@@ -6,6 +6,7 @@ using System.Runtime.InteropServices;
 // ─── Точка входа ──────────────────────────────────────────────────────────────
 
 var envFilePath = ResolveEnvFilePath(args);
+var validateOnly = HasFlag(args, "--validate") || HasFlag(args, "--validate-only");
 
 ConsoleUI.Clear();
 ConsoleUI.PrintBanner();
@@ -48,6 +49,12 @@ else
 }
 
 Console.WriteLine();
+if (validateOnly)
+{
+    RunValidationAndExit(config, envFilePath);
+    return;
+}
+
 ConsoleUI.Info("Нажмите любую клавишу для входа в меню...");
 Console.ReadKey(intercept: true);
 
@@ -97,6 +104,39 @@ static bool IsRunningAsRoot()
         // Fallback для сред, где P/Invoke недоступен.
         return string.Equals(Environment.UserName, "root", StringComparison.Ordinal);
     }
+}
+
+static bool HasFlag(string[] args, string flag)
+    => args.Any(a => string.Equals(a, flag, StringComparison.OrdinalIgnoreCase));
+
+static void RunValidationAndExit(EnvConfig config, string envFilePath)
+{
+    ConsoleUI.Clear();
+    ConsoleUI.PrintBanner();
+    ConsoleUI.Header("Режим проверки конфигурации");
+    ConsoleUI.Info($"Файл: {envFilePath}");
+
+    var issues = config.Validate();
+    if (issues.Count == 0)
+    {
+        ConsoleUI.Success("Конфигурация корректна. Ошибок не найдено.");
+        Environment.ExitCode = 0;
+        return;
+    }
+
+    foreach (var issue in issues.OrderByDescending(i => i.Level))
+        ConsoleUI.Issue(issue);
+
+    var errors = issues.Count(i => i.Level == Severity.Error);
+    var warnings = issues.Count(i => i.Level == Severity.Warning);
+    var info = issues.Count(i => i.Level == Severity.Info);
+
+    Console.WriteLine();
+    if (errors > 0) ConsoleUI.Error($"Ошибок: {errors}");
+    if (warnings > 0) ConsoleUI.Warning($"Предупреждений: {warnings}");
+    if (info > 0) ConsoleUI.Info($"Информационных: {info}");
+
+    Environment.ExitCode = errors > 0 ? 2 : 0;
 }
 
 [DllImport("libc")]

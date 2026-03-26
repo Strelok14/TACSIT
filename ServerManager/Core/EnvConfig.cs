@@ -101,11 +101,18 @@ internal sealed class EnvConfig
         return cfg;
     }
 
-    public void Save(string path)
+    public string? Save(string path, bool createBackup = false)
     {
         var dir = Path.GetDirectoryName(path);
         if (!string.IsNullOrEmpty(dir))
             Directory.CreateDirectory(dir);
+
+        string? backupPath = null;
+        if (createBackup && File.Exists(path))
+        {
+            backupPath = BuildBackupPath(path);
+            File.Copy(path, backupPath, overwrite: false);
+        }
 
         var targetDir = string.IsNullOrEmpty(dir)
             ? Directory.GetCurrentDirectory()
@@ -117,6 +124,7 @@ internal sealed class EnvConfig
         // Move в пределах одного каталога даёт атомарную замену на поддерживаемых ФС.
         File.Move(tempPath, path, overwrite: true);
         IsDirty = false;
+        return backupPath;
     }
 
     // ─── Шаблон новой конфигурации ────────────────────────────────────────
@@ -240,6 +248,14 @@ internal sealed class EnvConfig
     private static RawLine Comment(string text) => new(text, null, null);
     private static RawLine Blank()               => new(string.Empty, null, null);
     private static RawLine Kv(string k, string v) => new($"{k}={v}", k, v);
+
+    private static string BuildBackupPath(string path)
+    {
+        var dir = Path.GetDirectoryName(path) ?? Directory.GetCurrentDirectory();
+        var file = Path.GetFileName(path);
+        var stamp = DateTime.UtcNow.ToString("yyyyMMddTHHmmssZ");
+        return Path.Combine(dir, $"{file}.bak.{stamp}");
+    }
 }
 
 // ─── Вспомогательные типы ────────────────────────────────────────────────────

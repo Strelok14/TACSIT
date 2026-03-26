@@ -110,8 +110,11 @@ internal static class MainMenu
     {
         try
         {
-            config.Save(path);
+            var backupPath = config.Save(path, createBackup: true);
             ConsoleUI.Success($"Файл сохранён: {path}");
+
+            if (!string.IsNullOrWhiteSpace(backupPath))
+                ConsoleUI.Info($"Backup создан: {backupPath}");
 
             if (OperatingSystem.IsLinux())
             {
