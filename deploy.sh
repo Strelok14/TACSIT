@@ -15,6 +15,17 @@ if [ "$EUID" -ne 0 ]; then
    exit 1
 fi
 
+# Helper: execute command as postgres without hard dependency on sudo.
+run_as_postgres() {
+    if command -v sudo >/dev/null 2>&1; then
+        sudo -u postgres "$@"
+    elif command -v runuser >/dev/null 2>&1; then
+        runuser -u postgres -- "$@"
+    else
+        su -s /bin/bash postgres -c "$*"
+    fi
+}
+
 # 2. Установка зависимостей
 echo "📦 Установка зависимостей..."
 apt-get update
@@ -67,7 +78,7 @@ chmod +x /opt/strikeball/server/StrikeballServer
 # 7. Настройка PostgreSQL
 echo "🗃️  Настройка PostgreSQL..."
 systemctl start postgresql
-sudo -u postgres psql <<EOF
+run_as_postgres psql <<EOF
 DROP DATABASE IF EXISTS strikeballdb;
 DROP USER IF EXISTS strikeballuser;
 
@@ -134,8 +145,8 @@ echo "   API: http://localhost:5000/api"
 echo "   WebSocket: ws://localhost:5000/hubs/positioning"
 echo ""
 echo "📋 Полезные команды:"
-echo "   Просмотр логов: sudo journalctl -u strikeball-server -f"
-echo "   Перезапуск: sudo systemctl restart strikeball-server"
-echo "   Остановка: sudo systemctl stop strikeball-server"
-echo "   Статус: sudo systemctl status strikeball-server"
+echo "   Просмотр логов: journalctl -u strikeball-server -f"
+echo "   Перезапуск: systemctl restart strikeball-server"
+echo "   Остановка: systemctl stop strikeball-server"
+echo "   Статус: systemctl status strikeball-server"
 echo ""
