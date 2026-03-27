@@ -35,6 +35,8 @@ import java.util.Locale;
 
 public final class AiCameraActivity extends AppCompatActivity {
 
+    private static final long OBSERVATION_UPLOAD_INTERVAL_MS = 1000L;
+
     private final ActivityResultLauncher<String> cameraPermissionLauncher =
             registerForActivityResult(new ActivityResultContracts.RequestPermission(), isGranted -> {
                 if (isGranted) {
@@ -311,7 +313,7 @@ public final class AiCameraActivity extends AppCompatActivity {
         }
 
         long now = System.currentTimeMillis();
-        if (now - lastObservationUploadAtMs < 400L) {
+        if (now - lastObservationUploadAtMs < OBSERVATION_UPLOAD_INTERVAL_MS) {
             return;
         }
         lastObservationUploadAtMs = now;

@@ -2,7 +2,7 @@
     <string name="app_name">Tacsit</string>
     <string name="auth_title">Авторизация</string>
     <string name="server_ip_label">IP сервера</string>
-    <string name="server_ip_hint">Например, 192.168.0.10:5000</string>
+    <string name="server_ip_hint">Например, 192.168.2.167:5001</string>
     <string name="login_label">Логин</string>
     <string name="password_label">Пароль</string>
     <string name="sign_in">Войти</string>
@@ -20,6 +20,18 @@
     <string name="measurement_timestamp_optional">Timestamp (epoch ms, опционально)</string>
     <string name="measurement_battery_optional">BatteryLevel (опционально)</string>
     <string name="send_measurement">Отправить measurement</string>
+    <string name="send_measurement_once">Отправить один раз</string>
+    <string name="measurement_interval_ms">Интервал авто-отправки (мс)</string>
+    <string name="measurement_preset_500">500 мс</string>
+    <string name="measurement_preset_1000">1000 мс</string>
+    <string name="measurement_preset_2000">2000 мс</string>
+    <string name="start_auto_send">Старт авто-отправки</string>
+    <string name="stop_auto_send">Стоп авто-отправки</string>
+    <string name="measurement_status_preset_selected">Статус: выбран интервал %1$d мс</string>
+    <string name="measurement_status_auto_running">Статус: авто-отправка запущена (%1$d мс)</string>
+    <string name="measurement_status_auto_stopped">Статус: авто-отправка остановлена</string>
+    <string name="measurement_status_interval_invalid">Статус: интервал должен быть >= 200 мс</string>
+    <string name="measurement_status_rate_limited">Статус: слишком много запросов (429), увеличьте интервал</string>
     <string name="measurement_status_idle">Статус: ожидание</string>
     <string name="measurement_status_ready">Статус: готово к отправке</string>
     <string name="measurement_status_fill_required">Статус: заполни BeaconId, AnchorId и Distance</string>

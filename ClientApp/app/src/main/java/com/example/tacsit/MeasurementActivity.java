@@ -1,6 +1,8 @@
 package com.example.tacsit;
 
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.text.TextUtils;
 import android.widget.TextView;
 
@@ -29,9 +31,25 @@ public class MeasurementActivity extends AppCompatActivity {
     private TextInputEditText rssiEditText;
     private TextInputEditText timestampEditText;
     private TextInputEditText batteryLevelEditText;
+    private TextInputEditText intervalMsEditText;
     private TextView statusText;
+    private MaterialButton sendButton;
+    private MaterialButton toggleAutoSendButton;
 
     private TelemetryApi telemetryApi;
+    private final Handler autoSendHandler = new Handler(Looper.getMainLooper());
+    private boolean autoSendEnabled;
+
+    private final Runnable autoSendRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (!autoSendEnabled) {
+                return;
+            }
+            sendMeasurement(sendButton, false);
+            autoSendHandler.postDelayed(this, resolveIntervalMs());
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -44,13 +62,19 @@ public class MeasurementActivity extends AppCompatActivity {
         rssiEditText = findViewById(R.id.rssiEditText);
         timestampEditText = findViewById(R.id.timestampEditText);
         batteryLevelEditText = findViewById(R.id.batteryLevelEditText);
+        intervalMsEditText = findViewById(R.id.intervalMsEditText);
         statusText = findViewById(R.id.measurementStatusText);
-        MaterialButton sendButton = findViewById(R.id.sendMeasurementButton);
+        sendButton = findViewById(R.id.sendMeasurementButton);
+        toggleAutoSendButton = findViewById(R.id.toggleAutoSendButton);
+        MaterialButton preset500Button = findViewById(R.id.preset500Button);
+        MaterialButton preset1000Button = findViewById(R.id.preset1000Button);
+        MaterialButton preset2000Button = findViewById(R.id.preset2000Button);
 
         String serverIp = getIntent().getStringExtra(EXTRA_SERVER_IP);
         if (TextUtils.isEmpty(serverIp) || "test".equalsIgnoreCase(serverIp.trim())) {
             statusText.setText(getString(R.string.server_not_configured));
             sendButton.setEnabled(false);
+            toggleAutoSendButton.setEnabled(false);
             return;
         }
 
@@ -61,13 +85,70 @@ public class MeasurementActivity extends AppCompatActivity {
         } catch (IllegalArgumentException e) {
             statusText.setText(getString(R.string.invalid_server_url));
             sendButton.setEnabled(false);
+            toggleAutoSendButton.setEnabled(false);
             return;
         }
 
-        sendButton.setOnClickListener(view -> sendMeasurement(sendButton));
+        sendButton.setOnClickListener(view -> sendMeasurement(sendButton, true));
+        toggleAutoSendButton.setOnClickListener(view -> toggleAutoSend());
+        preset500Button.setOnClickListener(view -> applyIntervalPreset(500));
+        preset1000Button.setOnClickListener(view -> applyIntervalPreset(1000));
+        preset2000Button.setOnClickListener(view -> applyIntervalPreset(2000));
     }
 
-    private void sendMeasurement(MaterialButton sendButton) {
+    @Override
+    protected void onPause() {
+        autoSendHandler.removeCallbacks(autoSendRunnable);
+        super.onPause();
+    }
+
+    @Override
+    protected void onDestroy() {
+        autoSendEnabled = false;
+        autoSendHandler.removeCallbacks(autoSendRunnable);
+        super.onDestroy();
+    }
+
+    private void toggleAutoSend() {
+        if (autoSendEnabled) {
+            autoSendEnabled = false;
+            autoSendHandler.removeCallbacks(autoSendRunnable);
+            toggleAutoSendButton.setText(getString(R.string.start_auto_send));
+            statusText.setText(getString(R.string.measurement_status_auto_stopped));
+            return;
+        }
+
+        int intervalMs = resolveIntervalMs();
+        if (intervalMs < 200) {
+            statusText.setText(getString(R.string.measurement_status_interval_invalid));
+            return;
+        }
+
+        autoSendEnabled = true;
+        toggleAutoSendButton.setText(getString(R.string.stop_auto_send));
+        statusText.setText(getString(R.string.measurement_status_auto_running, intervalMs));
+        autoSendHandler.removeCallbacks(autoSendRunnable);
+        autoSendHandler.post(autoSendRunnable);
+    }
+
+    private int resolveIntervalMs() {
+        String raw = textOf(intervalMsEditText);
+        if (TextUtils.isEmpty(raw)) {
+            return 1000;
+        }
+        try {
+            return Integer.parseInt(raw);
+        } catch (NumberFormatException ex) {
+            return 1000;
+        }
+    }
+
+    private void applyIntervalPreset(int intervalMs) {
+        intervalMsEditText.setText(String.valueOf(intervalMs));
+        statusText.setText(getString(R.string.measurement_status_preset_selected, intervalMs));
+    }
+
+    private void sendMeasurement(MaterialButton sendButton, boolean showSendingStatus) {
         String beaconIdValue = textOf(beaconIdEditText);
         String anchorIdValue = textOf(anchorIdEditText);
         String distanceValue = textOf(distanceEditText);
@@ -109,15 +190,17 @@ public class MeasurementActivity extends AppCompatActivity {
             timestamp,
             batteryLevel
         );
-        sendButton.setEnabled(false);
-        statusText.setText(getString(R.string.measurement_status_sending));
+        if (showSendingStatus) {
+            statusText.setText(getString(R.string.measurement_status_sending));
+        }
 
         telemetryApi.sendMeasurement(request).enqueue(new Callback<>() {
             @Override
             public void onResponse(Call<com.google.gson.JsonElement> call, Response<com.google.gson.JsonElement> response) {
-                sendButton.setEnabled(true);
                 if (response.isSuccessful()) {
                     statusText.setText(getString(R.string.measurement_status_success));
+                } else if (response.code() == 429) {
+                    statusText.setText(getString(R.string.measurement_status_rate_limited));
                 } else {
                     statusText.setText(getString(R.string.measurement_status_server_error));
                 }
@@ -125,7 +208,6 @@ public class MeasurementActivity extends AppCompatActivity {
 
             @Override
             public void onFailure(Call<com.google.gson.JsonElement> call, Throwable throwable) {
-                sendButton.setEnabled(true);
                 statusText.setText(getString(
                         R.string.measurement_status_network_error_details,
                         networkReason(throwable),
