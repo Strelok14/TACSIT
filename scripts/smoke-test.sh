@@ -13,9 +13,15 @@ set -euo pipefail
 
 SERVER="${1:-localhost:5001}"
 
-# Нормализуем базовый URL
+# Нормализуем базовый URL.
+# Для локальных/LAN адресов по умолчанию используем HTTP, чтобы из коробки
+# работать с профилем TACID_ALLOW_INSECURE_HTTP=true.
 if [[ ! "$SERVER" =~ ^https?:// ]]; then
-  BASE_URL="https://$SERVER"
+  if [[ "$SERVER" =~ ^(localhost|127\.0\.0\.1|10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[0-1])\.) ]]; then
+    BASE_URL="http://$SERVER"
+  else
+    BASE_URL="https://$SERVER"
+  fi
 else
   BASE_URL="$SERVER"
 fi
@@ -27,6 +33,11 @@ echo ""
 LOGIN="${TACID_TEST_LOGIN:-admin}"
 PASSWORD="${TACID_TEST_PASSWORD:-}"
 CURL_OPTS=(-s -k --max-time 10)   # -k для разрешения self-signed cert в тестах
+
+if [ -z "$PASSWORD" ]; then
+  echo "  [FAIL] TACID_TEST_PASSWORD пустой. Экспортируйте пароль перед запуском smoke-test."
+  exit 1
+fi
 
 # Тестовый маяк и ключ для HMAC-телеметрии.
 BEACON_ID="${TACID_TEST_BEACON_ID:-9001}"
@@ -43,7 +54,7 @@ auth_post() {
   local suffix="$1"
   local data="$2"
   local path="$AUTH_PREFIX$suffix"
-  curl "${CURL_OPTS[@]}" -X POST "$BASE_URL$path" -H "Content-Type: application/json" -d "$data"
+  curl "${CURL_OPTS[@]}" -X POST "$BASE_URL$path" -H "Content-Type: application/json" -d "$data" || true
 }
 
 auth_status() {
@@ -52,6 +63,11 @@ auth_status() {
   local path="$AUTH_PREFIX$suffix"
   curl "${CURL_OPTS[@]}" -o /dev/null -w "%{http_code}" -X POST "$BASE_URL$path" -H "Content-Type: application/json" -H "Authorization: Bearer $ACCESS_TOKEN" -d "$data"
 }
+
+# Быстрая проверка доступности TCP endpoint до логина.
+if ! curl "${CURL_OPTS[@]}" -o /dev/null "$BASE_URL/"; then
+  fail "Сервер недоступен по $BASE_URL"
+fi
 
 # ---------------------------------------------------------------------------
 # Шаг 1: Login — получение access + refresh token

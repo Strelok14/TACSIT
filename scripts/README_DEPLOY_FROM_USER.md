@@ -32,10 +32,18 @@ cd /home/youruser/TACSIT/scripts
 ./deploy_from_user.sh
 ```
 
-3. Проверка работоспособности:
+3. Диагностика окружения (рекомендуется):
 
 ```bash
-./smoke-test.sh
+chmod +x ./doctor.sh
+./doctor.sh --base-url http://localhost:5001
+```
+
+4. Проверка работоспособности:
+
+```bash
+# Для LAN/VPN профиля (без TLS)
+./smoke-test.sh http://localhost:5001
 ```
 
 ## Что делает каждый скрипт

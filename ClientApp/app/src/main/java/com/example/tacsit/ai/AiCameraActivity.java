@@ -355,13 +355,20 @@ public final class AiCameraActivity extends AppCompatActivity {
 
     private String buildDefaultSignalUrl(String serverInput) {
         String host = extractHost(serverInput);
-        return String.format(Locale.US, "ws://%s:8080/ws", host);
+        if (host.isBlank()) {
+            return "";
+        }
+        boolean isLan = "localhost".equalsIgnoreCase(host)
+                || host.matches("^\\d{1,3}(\\.\\d{1,3}){3}$")
+                || host.endsWith(".local");
+        String scheme = isLan ? "ws" : "wss";
+        return String.format(Locale.US, "%s://%s:8080/ws", scheme, host);
     }
 
     private String extractHost(String serverInput) {
         String raw = serverInput == null ? "" : serverInput.trim();
         if (raw.isBlank() || "test".equalsIgnoreCase(raw)) {
-            return "192.168.0.10";
+            return "";
         }
 
         String normalized = raw.startsWith("http://") || raw.startsWith("https://")
@@ -423,3 +430,4 @@ public final class AiCameraActivity extends AppCompatActivity {
         return editText.getText().toString().trim();
     }
 }
+

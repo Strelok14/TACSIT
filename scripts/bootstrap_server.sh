@@ -90,6 +90,19 @@ sql_escape() {
   printf "%s" "$1" | sed "s/'/''/g"
 }
 
+extract_env_connection_password() {
+  local file="$1"
+  [[ -f "$file" ]] || return 1
+
+  # Read last connection string line to respect user overrides later in file.
+  local line
+  line="$(grep '^ConnectionStrings__PostgreSQL=' "$file" | tail -n 1 || true)"
+  [[ -n "$line" ]] || return 1
+
+  line="${line#ConnectionStrings__PostgreSQL=}"
+  printf "%s" "$line" | sed -n 's/.*Password=\([^;]*\).*/\1/p'
+}
+
 parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -226,8 +239,23 @@ configure_postgres() {
   systemctl enable postgresql
   systemctl start postgresql
 
+  # Keep DB password and env in sync on repeated bootstrap runs.
+  # If env already exists and caller did not request overwrite/new password,
+  # reuse password from env instead of generating and applying a different one.
   if [[ -z "$DB_PASSWORD" ]]; then
-    DB_PASSWORD="$(random_urlsafe 24)"
+    if [[ -f "$ENV_FILE" && "$OVERWRITE_ENV" -ne 1 ]]; then
+      local existing_password
+      existing_password="$(extract_env_connection_password "$ENV_FILE" || true)"
+      if [[ -n "$existing_password" ]]; then
+        DB_PASSWORD="$existing_password"
+        log "Использую пароль PostgreSQL из существующего env-файла"
+      else
+        DB_PASSWORD="$(random_urlsafe 24)"
+        log "В env нет ConnectionStrings__PostgreSQL/Password; сгенерирован новый пароль БД"
+      fi
+    else
+      DB_PASSWORD="$(random_urlsafe 24)"
+    fi
   fi
 
   local db_user_escaped db_password_escaped db_name_escaped

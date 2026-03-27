@@ -63,19 +63,43 @@ builder.Services.AddCors(options =>
 
         if (origins.Length == 0)
         {
-            // Для тестовых стендов без origin-конфига сохраняем совместимость.
-            policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader();
+            if (!builder.Environment.IsProduction())
+            {
+                // Для dev/testing без origin-конфига сохраняем совместимость.
+                policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader();
+            }
+
+            // В production без списка origins оставляем deny-by-default
+            // (без AllowAnyOrigin/WithOrigins), чтобы не открывать CORS глобально.
+            return;
         }
-        else
-        {
-            policy.WithOrigins(origins).AllowAnyMethod().AllowAnyHeader();
-        }
+
+        policy.WithOrigins(origins).AllowAnyMethod().AllowAnyHeader();
     });
 });
 
 var jwtSigningKey = builder.Configuration["Jwt:SigningKey"]
     ?? Environment.GetEnvironmentVariable("TACID_JWT_SIGNING_KEY")
     ?? throw new InvalidOperationException("JWT signing key is required (TACID_JWT_SIGNING_KEY)");
+
+var masterKeyB64 = builder.Configuration["Security:MasterKeyB64"]
+    ?? Environment.GetEnvironmentVariable("TACID_MASTER_KEY_B64")
+    ?? throw new InvalidOperationException("Master key is required (TACID_MASTER_KEY_B64, Base64 32 bytes)");
+
+byte[] masterKey;
+try
+{
+    masterKey = Convert.FromBase64String(masterKeyB64);
+}
+catch (FormatException ex)
+{
+    throw new InvalidOperationException("TACID_MASTER_KEY_B64 is not valid Base64", ex);
+}
+
+if (masterKey.Length != 32)
+{
+    throw new InvalidOperationException("TACID_MASTER_KEY_B64 must decode to exactly 32 bytes");
+}
 
 var issuer = builder.Configuration["Jwt:Issuer"] ?? "tacid-server";
 var audience = builder.Configuration["Jwt:Audience"] ?? "tacid-clients";
@@ -247,6 +271,15 @@ app.Logger.LogInformation("Strikeball Positioning Server started [{environment}]
 app.Logger.LogInformation("SignalR Hub endpoint: /hubs/positioning");
 app.Logger.LogInformation("HTTPS enforcement: {mode}", requireHttps ? "enabled" : "disabled (LAN/VPN mode)");
 app.Logger.LogInformation("Database provider: {provider}", builder.Environment.IsProduction() ? "PostgreSQL" : "SQLite");
+
+if (app.Environment.IsProduction())
+{
+    var configuredOrigins = app.Configuration.GetSection("Security:AllowedOrigins").Get<string[]>() ?? Array.Empty<string>();
+    if (configuredOrigins.Length == 0)
+    {
+        app.Logger.LogWarning("CORS is deny-by-default: Security:AllowedOrigins is empty in production");
+    }
+}
 
 app.Run();
 

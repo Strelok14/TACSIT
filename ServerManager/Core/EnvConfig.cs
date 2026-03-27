@@ -202,6 +202,8 @@ internal sealed class EnvConfig
         if (string.IsNullOrWhiteSpace(RedisConnectionString))
             issues.Add(new ConfigIssue(Severity.Warning, "Redis__ConnectionString",
                 "Redis не настроен — replay protection, rate limiting и JWT denylist недоступны"));
+        else
+            ValidateRedisConnectionString(issues, RedisConnectionString!);
 
         if (AllowInsecureHttp)
             issues.Add(new ConfigIssue(Severity.Warning, "TACID_ALLOW_INSECURE_HTTP",
@@ -212,6 +214,39 @@ internal sealed class EnvConfig
                 "Player создан без привязки к маяку — телеметрия не будет ассоциирована с игроком"));
 
         return issues;
+    }
+
+    private static void ValidateRedisConnectionString(List<ConfigIssue> issues, string redisConnectionString)
+    {
+        var normalized = redisConnectionString.Trim();
+        if (normalized.Length == 0)
+        {
+            return;
+        }
+
+        var parts = normalized.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var hasEndpoint = parts.Any(p => !p.Contains('='));
+        if (!hasEndpoint)
+        {
+            issues.Add(new ConfigIssue(Severity.Error, "Redis__ConnectionString",
+                "Отсутствует endpoint Redis (пример: localhost:6379)"));
+            return;
+        }
+
+        var hasAbortConnect = parts.Any(p => p.StartsWith("abortConnect=", StringComparison.OrdinalIgnoreCase));
+        if (!hasAbortConnect)
+        {
+            issues.Add(new ConfigIssue(Severity.Info, "Redis__ConnectionString",
+                "Рекомендуется добавить abortConnect=false для устойчивого старта при временной недоступности Redis"));
+        }
+
+        var hasSsl = parts.Any(p => p.StartsWith("ssl=", StringComparison.OrdinalIgnoreCase));
+        var hasPassword = parts.Any(p => p.StartsWith("password=", StringComparison.OrdinalIgnoreCase));
+        if (hasSsl && !hasPassword)
+        {
+            issues.Add(new ConfigIssue(Severity.Info, "Redis__ConnectionString",
+                "Для удалённого Redis через TLS обычно требуется password=..."));
+        }
     }
 
     // ─── Экспорт ──────────────────────────────────────────────────────────

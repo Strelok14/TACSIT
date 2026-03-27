@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Network security configuration for T.A.C.I.D. client.
+
+  Cleartext HTTP (and ws://) is intentionally permitted for LAN/VPN deployments
+  where the server runs in insecure-HTTP mode (TACID_ALLOW_INSECURE_HTTP).
+
+  For an internet-facing production deployment with TLS enabled on the server:
+    1. Set cleartextTrafficPermitted="false" in <base-config>
+    2. Remove or restrict the <domain-config> block
+    3. Rebuild and re-sign the APK
+-->
+<network-security-config>
+    <!--
+        LAN/VPN mode: cleartext allowed for all hosts.
+        Change to "false" when server TLS is enabled.
+    -->
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

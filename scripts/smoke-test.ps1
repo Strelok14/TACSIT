@@ -27,10 +27,20 @@ if ([string]::IsNullOrWhiteSpace($Password)) {
 if ($BeaconId -le 0) {
     $BeaconId = if ($env:TACID_TEST_BEACON_ID) { [int]$env:TACID_TEST_BEACON_ID } else { 9001 }
 }
+if ([string]::IsNullOrWhiteSpace($Password)) {
+    Write-Host "  [FAIL] TACID_TEST_PASSWORD is empty. Set credentials before running smoke test." -ForegroundColor Red
+    exit 1
+}
 
-# Нормализация базового пути
+# Нормализация базового пути.
+# Для локальных/LAN адресов по умолчанию используем HTTP, чтобы smoke-test
+# сразу работал в профиле без TLS.
 if ($Server -notmatch "^https?://") {
-    $BaseUrl = "https://$Server"
+    if ($Server -match "^(localhost|127\.0\.0\.1|10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)") {
+        $BaseUrl = "http://$Server"
+    } else {
+        $BaseUrl = "https://$Server"
+    }
 } else {
     $BaseUrl = $Server
 }
@@ -81,6 +91,12 @@ function Build-HmacSignature([string]$canonical, [byte[]]$rawKey) {
 
 Write-Host "==> T.A.C.I.D. Smoke Test | Server: $BaseUrl"
 Write-Host ""
+
+try {
+    $probe = $Client.GetAsync("$BaseUrl/").GetAwaiter().GetResult()
+} catch {
+    Fail "Server is unreachable at $BaseUrl"
+}
 
 # ---------------------------------------------------------------------------
 # Шаг 1: Login

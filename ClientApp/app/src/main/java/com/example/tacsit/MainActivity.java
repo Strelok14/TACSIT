@@ -46,11 +46,6 @@ public class MainActivity extends AppCompatActivity {
                 return;
             }
 
-            if (isTestBypass(ip, login, password)) {
-                openMenuScreen(ip);
-                return;
-            }
-
             signInButton.setEnabled(false);
             authorize(ip, login, password, signInButton);
         });
@@ -98,12 +93,6 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    private boolean isTestBypass(String serverIp, String login, String password) {
-        return !TextUtils.isEmpty(serverIp)
-                && "test".equalsIgnoreCase(login)
-                && "test".equalsIgnoreCase(password);
-    }
-
     private void openMenuScreen(String serverIp) {
         Intent intent = new Intent(this, MenuActivity.class);
         intent.putExtra(MenuActivity.EXTRA_SERVER_IP, serverIp);
@@ -117,3 +106,4 @@ public class MainActivity extends AppCompatActivity {
         return editText.getText().toString().trim();
     }
 }
+

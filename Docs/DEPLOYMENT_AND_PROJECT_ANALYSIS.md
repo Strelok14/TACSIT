@@ -80,6 +80,15 @@ Linux production (файл окружения):
 sudo dotnet ServerManager/bin/Release/net8.0/tacid-manager.dll --env-file /etc/strikeball/environment
 ```
 
+Быстрая настройка Redis через `tacid-manager`:
+
+1. Открыть меню `4. База данных и Redis`.
+2. Для LAN-сервера выбрать `5. Redis пресеты` → `1. LAN / localhost`.
+3. Либо пройти `4. Redis мастер настройки (пошагово)` для ручной сборки строки.
+4. Выполнить `6. Проверить доступность Redis endpoint`.
+5. Сохранить изменения через главное меню `7. Сохранить файл`.
+6. Перезапустить сервис: `sudo systemctl restart strikeball-server`.
+
 Что меняется через менеджер:
 
 - Ключи: `TACID_JWT_SIGNING_KEY`, `TACID_MASTER_KEY_B64`
@@ -105,7 +114,7 @@ export TACID_TEST_PASSWORD=$(sudo awk -F= '/^TACID_ADMIN_PASSWORD=/{print $2}' /
 Проверка:
 
 ```bash
-./scripts/smoke-test.sh your.domain.com
+./scripts/smoke-test.sh http://localhost:5001
 ```
 
 Если smoke-test не проходит, прод не считается готовым.
@@ -125,31 +134,204 @@ sudo systemctl stop strikeball-server
 # restore files in /opt/strikeball/server
 sudo chown -R strikeball:strikeball /opt/strikeball/server
 sudo systemctl start strikeball-server
-./scripts/smoke-test.sh your.domain.com
+./scripts/smoke-test.sh http://localhost:5001
 ```
 
-## 9. Аудит документации (результат)
+---
 
-Проверены файлы:
+## 11. Боевой запуск — пошаговый регламент
 
-- `README.md`
-- `Docs/SECURITY.md`
-- `Docs/PROJECT_COMPLETION_REPORT.md`
-- `scripts/README_DEPLOY_FROM_USER.md`
-- `Docs/DEPLOYMENT_AND_PROJECT_ANALYSIS.md`
+### Шаг 1. Развернуть сервер (чистая машина)
 
-Решения по унификации:
+```bash
+git clone https://github.com/Strelok14/TACSIT.git
+cd TACSIT/StrikeballServer
 
-- Убран дублирующий англо-русский стиль в этом документе
-- Убраны повторные длинные блоки команд, оставлены ссылки на единый источник в `scripts/README_DEPLOY_FROM_USER.md`
-- Разделены зоны ответственности: архитектура в `README.md`, безопасность в `Docs/SECURITY.md`, операции в этом runbook
+# LAN/VPN профиль без TLS:
+sudo ./scripts/bootstrap_server.sh --allow-insecure-http
 
-## 10. Источник истины
+# Интернет-профиль с TLS:
+sudo ./scripts/bootstrap_server.sh \
+  --domain tacid.example.com \
+  --tls-email admin@example.com \
+  --setup-tls
+```
 
-Для деплоя и операций использовать только:
+Bootstrap автоматически генерирует ключи безопасности и создаёт `/etc/strikeball/environment`.
 
-1. `scripts/README_DEPLOY_FROM_USER.md`
-2. `Docs/DEPLOYMENT_AND_PROJECT_ANALYSIS.md`
-3. `Docs/SECURITY.md`
+### Шаг 2. Добавить учётные данные пользователей
 
-Остальные документы должны ссылаться на эти 3 файла, а не дублировать их содержимое.
+Bootstrap не создаёт логины — их необходимо добавить вручную:
+
+```bash
+sudo nano /etc/strikeball/environment
+```
+
+Добавить в конец файла:
+
+```
+TACID_ADMIN_LOGIN=admin
+TACID_ADMIN_PASSWORD=НадёжныйПароль123
+TACID_OBSERVER_LOGIN=observer
+TACID_OBSERVER_PASSWORD=НаблюдательПароль456
+TACID_PLAYER_LOGIN=player
+TACID_PLAYER_PASSWORD=ИгрокПароль789
+TACID_PLAYER_BEACON_ID=1
+```
+
+```bash
+sudo systemctl restart strikeball-server
+```
+
+### Шаг 3. Выложить приложение
+
+```bash
+cd ~/TACSIT/StrikeballServer/scripts
+./deploy_from_user.sh
+```
+
+### Шаг 4. Диагностика
+
+```bash
+chmod +x ./doctor.sh
+
+# Только проверить:
+./doctor.sh --base-url http://localhost:5001
+
+# Проверить и попытаться исправить (дрейф пароля БД, остановленный сервис):
+./doctor.sh --base-url http://localhost:5001 --fix
+```
+
+### Шаг 5. Smoke-test
+
+```bash
+export TACID_TEST_PASSWORD=$(sudo sed -n 's/^TACID_ADMIN_PASSWORD=//p' /etc/strikeball/environment | tail -1)
+./smoke-test.sh http://localhost:5001
+```
+
+Готово, если в выводе нет строк `[FAIL]`.
+
+---
+
+## 12. Подключение Android-клиента
+
+### Сборка APK
+
+```bash
+# На dev-машине:
+cd StrikeballServer/ClientApp
+./gradlew assembleDebug
+# APK: app/build/outputs/apk/debug/app-debug.apk
+
+# Установить на устройство через USB:
+adb install app/build/outputs/apk/debug/app-debug.apk
+```
+
+### Что вводить на экране входа
+
+| Поле | Значение | Пример |
+|---|---|---|
+| **IP сервера** | IP или hostname сервера | `192.168.1.50` |
+| **Логин** | `TACID_ADMIN_LOGIN` из env | `admin` |
+| **Пароль** | `TACID_ADMIN_PASSWORD` из env | `НадёжныйПароль123` |
+
+Посмотреть учётные данные на сервере:
+
+```bash
+sudo grep -E '^TACID_(ADMIN|OBSERVER|PLAYER)_(LOGIN|PASSWORD)' /etc/strikeball/environment
+```
+
+**Как клиент выбирает HTTP/HTTPS:**
+
+- IPv4 (любой) / localhost / `*.local` → `http://HOST:5001`
+- Домен (например `tacid.example.com`) → `https://HOST:5001`
+- Порт `5001` добавляется автоматически, если не указан
+
+### Роли
+
+| Роль | Доступ |
+|---|---|
+| `admin` | Полный доступ ко всем экранам |
+| `observer` | Только карта (позиции маяков в реальном времени) |
+| `player` | Карта + отправка телеметрии + AI-камера |
+
+### AI-камера — сигнальный URL (ServerAI)
+
+При открытии экрана AI-камеры клиент автоматически вычисляет URL, но его можно изменить вручную.
+
+| Ситуация | URL в поле |
+|---|---|
+| ServerAI на LAN-сервере | `ws://192.168.1.50:8080/ws` (заполняется автоматически) |
+| ServerAI на VPN | `ws://10.8.0.1:8080/ws` |
+| Обработка прямо на устройстве (ML Kit) | Введите `local` |
+| ServerAI не используется | Оставьте пустым или введите `local` |
+
+Статус ServerAI на сервере:
+
+```bash
+sudo systemctl status serverai
+```
+
+### Типичные проблемы
+
+| Симптом | Причина | Решение |
+|---|---|---|
+| «Ошибка сети» | Сервер недоступен | Проверить IP и порт: `curl http://IP:5001/` |
+| «Неверные учётные данные» | Пароль не совпадает с env на сервере | Сверить с `/etc/strikeball/environment` |
+| Карта не обновляется | SignalR не подключился | Клиент сам переходит на HTTP polling; проверить логи сервиса |
+| AI-камера: «Invalid URL» | Неверный ws-адрес | Должен начинаться с `ws://` или `wss://`, либо введите `local` |
+| Нет позиций на карте | Маяки не присылают данные | Убедитесь что маяки отправляют `POST /api/telemetry/measurement` |
+
+---
+
+## 13. Финальный минимальный чеклист (LAN без TLS)
+
+Используйте этот список как единственный сценарий перед боевым тестом в LAN/VPN-контуре.
+
+1. На сервере выполнить bootstrap один раз:
+
+```bash
+cd ~/TACSIT/StrikeballServer
+sudo ./scripts/bootstrap_server.sh --allow-insecure-http
+```
+
+2. Проверить/задать пользователей в `/etc/strikeball/environment`:
+
+```bash
+sudo grep -E '^TACID_(ADMIN|OBSERVER|PLAYER)_(LOGIN|PASSWORD|BEACON_ID)' /etc/strikeball/environment
+```
+
+3. Выложить актуальную сборку:
+
+```bash
+cd ~/TACSIT/StrikeballServer/scripts
+./deploy_from_user.sh
+```
+
+4. Выполнить авто-диагностику с фиксом:
+
+```bash
+./doctor.sh --base-url http://localhost:5001 --fix
+```
+
+5. Прогнать smoke-test:
+
+```bash
+export TACID_TEST_PASSWORD=$(sudo sed -n 's/^TACID_ADMIN_PASSWORD=//p' /etc/strikeball/environment | tail -1)
+./smoke-test.sh http://localhost:5001
+```
+
+6. Проверить сервис и логи:
+
+```bash
+sudo systemctl status strikeball-server --no-pager
+sudo journalctl -u strikeball-server -n 120 --no-pager
+```
+
+7. Подключить Android-клиент:
+
+- В поле IP указать LAN IP сервера (пример: `192.168.1.50`).
+- Логин/пароль взять из `/etc/strikeball/environment`.
+- Для AI: оставить авто-URL `ws://<server-ip>:8080/ws` или ввести `local`.
+
+Если шаги 4 и 5 без `[FAIL]`, контур готов к боевому тесту без дополнительных импровизаций.

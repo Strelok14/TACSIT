@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
@@ -47,12 +47,16 @@ public class AuthController : ControllerBase
         }
 
         var user = ResolveUsers().FirstOrDefault(u =>
-            string.Equals(u.Login, request.Login, StringComparison.Ordinal) &&
-            string.Equals(u.Password, request.Password, StringComparison.Ordinal));
+            string.Equals(u.Login, request.Login, StringComparison.Ordinal));
+
+        if (user != null && !FixedTimeSecretEquals(user.Password, request.Password))
+        {
+            user = null;
+        }
 
         if (user == null)
         {
-            _logger.LogWarning("Auth failed for login {login}", request.Login);
+            _logger.LogWarning("Auth failed: invalid credentials");
             return Unauthorized(new AuthResponseDto { Success = false, Message = "invalid credentials" });
         }
 
@@ -256,6 +260,19 @@ public class AuthController : ControllerBase
         {
             users.Add(new AuthUser(login, pass, role, beaconId));
         }
+    }
+
+    private static bool FixedTimeSecretEquals(string expected, string provided)
+    {
+        if (expected == null || provided == null)
+        {
+            return false;
+        }
+
+        // Compare SHA-256 digests in fixed time to reduce timing side channels.
+        var expectedHash = SHA256.HashData(Encoding.UTF8.GetBytes(expected));
+        var providedHash = SHA256.HashData(Encoding.UTF8.GetBytes(provided));
+        return CryptographicOperations.FixedTimeEquals(expectedHash, providedHash);
     }
 
     private sealed record AuthUser(string Login, string Password, string Role, int? BeaconId);
