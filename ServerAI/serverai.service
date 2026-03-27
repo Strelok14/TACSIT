@@ -1,0 +1,27 @@
+[Unit]
+Description=ServerAI WebRTC YOLO service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=serverai
+Group=serverai
+WorkingDirectory=/opt/tacsit/ServerAI
+Environment=PYTHONUNBUFFERED=1
+Environment=SERVER_AI_HOST=0.0.0.0
+Environment=SERVER_AI_PORT=8080
+Environment=YOLO_MODEL=yolov8n.pt
+Environment=YOLO_CONFIDENCE=0.35
+Environment=DETECTION_INTERVAL_MS=50
+Environment=YOLO_CONFIG_DIR=/opt/tacsit/ServerAI/.ultralytics
+ExecStart=/opt/tacsit/ServerAI/.venv/bin/python /opt/tacsit/ServerAI/server.py
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

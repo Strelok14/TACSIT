@@ -19,6 +19,7 @@ public class MenuActivity extends AppCompatActivity {
         String serverIp = getIntent().getStringExtra(EXTRA_SERVER_IP);
         MaterialButton mapButton = findViewById(R.id.openMapButton);
         MaterialButton measurementButton = findViewById(R.id.openMeasurementButton);
+        MaterialButton aiCameraButton = findViewById(R.id.openAiCameraButton);
         mapButton.setOnClickListener(view -> {
             Intent intent = new Intent(this, MapActivity.class);
             intent.putExtra(MapActivity.EXTRA_SERVER_IP, serverIp);
@@ -27,6 +28,12 @@ public class MenuActivity extends AppCompatActivity {
 
         measurementButton.setOnClickListener(view -> {
             Intent intent = new Intent(this, MeasurementActivity.class);
+            intent.putExtra(MeasurementActivity.EXTRA_SERVER_IP, serverIp);
+            startActivity(intent);
+        });
+
+        aiCameraButton.setOnClickListener(view -> {
+            Intent intent = new Intent(this, com.example.tacsit.ai.AiCameraActivity.class);
             intent.putExtra(MeasurementActivity.EXTRA_SERVER_IP, serverIp);
             startActivity(intent);
         });

@@ -73,7 +73,7 @@ public class PositioningHubClient {
      * Подключиться к SignalR Hub'у
      */
     public void connect(Runnable onConnected, Runnable onFailed) {
-        if (isConnecting || hubConnection != null) {
+        if (isConnecting || (hubConnection != null && hubConnection.getConnectionState() != HubConnectionState.DISCONNECTED)) {
             Log.w(TAG, "Уже подключены или подключение в процессе");
             return;
         }
@@ -84,7 +84,6 @@ public class PositioningHubClient {
             // Создаём HubConnection с JWT token через query string
             hubConnection = HubConnectionBuilder
                     .create(serverUrl + "?access_token=" + accessToken)
-                    .withAutomaticReconnect()
                     .build();
 
             setupEventHandlers();
@@ -188,7 +187,7 @@ public class PositioningHubClient {
      * Подписаться на обновления конкретного маяка
      */
     public void subscribeToBeacon(int beaconId) {
-        if (hubConnection == null || hubConnection.getState() != HubConnectionState.CONNECTED) {
+        if (hubConnection == null || hubConnection.getConnectionState() != HubConnectionState.CONNECTED) {
             Log.w(TAG, "Не подключены к hub'у");
             return;
         }
@@ -208,7 +207,7 @@ public class PositioningHubClient {
      * Отписаться от обновлений конкретного маяка
      */
     public void unsubscribeFromBeacon(int beaconId) {
-        if (hubConnection == null || hubConnection.getState() != HubConnectionState.CONNECTED) {
+        if (hubConnection == null || hubConnection.getConnectionState() != HubConnectionState.CONNECTED) {
             Log.w(TAG, "Не подключены к hub'у");
             return;
         }
@@ -228,7 +227,7 @@ public class PositioningHubClient {
      * Запросить статус сервера
      */
     public void getServerStatus() {
-        if (hubConnection == null || hubConnection.getState() != HubConnectionState.CONNECTED) {
+        if (hubConnection == null || hubConnection.getConnectionState() != HubConnectionState.CONNECTED) {
             Log.w(TAG, "Не подключены к hub'у");
             return;
         }
@@ -248,7 +247,7 @@ public class PositioningHubClient {
      * Проверить статус подключения
      */
     public boolean isConnected() {
-        return hubConnection != null && hubConnection.getState() == HubConnectionState.CONNECTED;
+        return hubConnection != null && hubConnection.getConnectionState() == HubConnectionState.CONNECTED;
     }
 
     /**

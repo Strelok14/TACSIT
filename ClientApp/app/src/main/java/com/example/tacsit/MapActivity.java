@@ -331,7 +331,7 @@ public class MapActivity extends AppCompatActivity implements PositioningHubClie
             Marker marker = new Marker(mapView);
             marker.setPosition(new GeoPoint(point.getLat(), point.getLng()));
             marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM);
-            marker.setTitle(point.getId() != null ? point.getId() : "Unknown");
+            marker.setTitle(String.valueOf(point.getId()));
             mapView.getOverlays().add(marker);
             markers.add(marker);
         }

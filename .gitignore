@@ -48,3 +48,16 @@ packages/
 TestResults/
 *.trx
 *.coverage
+
+# Python / ServerAI
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Android / Gradle
+.gradle/
+local.properties
+ClientApp/.idea/
+ClientApp/app/build/

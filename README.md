@@ -381,6 +381,29 @@ curl -X POST http://localhost:5000/api/telemetry/measurement \
 
 Полная документация проекта находится в `Docs/PROJECT_DOCUMENTATION.md`
 
+## 🤖 ServerAI MVP
+
+В репозиторий добавлен отдельный модуль `ServerAI/` для AI-детекции людей по WebRTC видеопотоку.
+
+Что входит в MVP:
+
+- `aiohttp` WebSocket сигналинг на `ws://<server>:8080/ws`
+- `aiortc` для приема WebRTC video track и DataChannel
+- `ultralytics` + `torch` (CPU) для YOLO-инференса
+- отправка JSON с детекциями `person` обратно в Android-клиент через DataChannel
+
+Быстрый запуск:
+
+```bash
+cd ServerAI
+python -m venv .venv
+. .venv/bin/activate
+pip install -r requirements.txt
+python server.py
+```
+
+Android-клиент в `ClientApp/` теперь содержит отдельный AI экран для локального preview, WebRTC uplink и отрисовки bbox поверх видео.
+
 Краткая инструкция для ручного теста с ПК и телефона: `Docs/QUICK_MANUAL_TEST.md`
 
 One-page версия для боевого прогона: `Docs/QUICK_MANUAL_TEST_ONEPAGE.md`

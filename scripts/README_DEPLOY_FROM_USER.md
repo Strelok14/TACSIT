@@ -5,6 +5,8 @@
 - `deploy_from_user.sh` — выкладка новой версии приложения
 - `smoke-test.sh` — проверка после деплоя
 
+It also contains `deploy_serverai_from_user.sh` — a safe deployment helper for `ServerAI` into `/opt/tacsit/ServerAI`.
+
 ## Рекомендуемый порядок
 
 1. Bootstrap (один раз, под root):
@@ -26,7 +28,7 @@ sudo ./scripts/bootstrap_server.sh \
 2. Deploy приложения (обычный пользователь):
 
 ```bash
-cd /home/youruser/TACSIT/StrikeballServer/scripts
+cd /home/youruser/TACSIT/scripts
 ./deploy_from_user.sh
 ```
 
@@ -66,3 +68,25 @@ cd /home/youruser/TACSIT/StrikeballServer/scripts
 ```bash
 sudo journalctl -u strikeball-server -n 200 --no-pager
 ```
+
+## ServerAI deploy (Debian/Ubuntu)
+
+Дополнительно доступен скрипт `deploy_serverai_from_user.sh` для безопасного деплоя `ServerAI` в `/opt/tacsit/ServerAI`.
+
+Usage (on server as your normal user):
+
+```bash
+cd /home/youruser/TACSIT/scripts
+./deploy_serverai_from_user.sh
+```
+
+What it does:
+- Syncs `ServerAI/` sources to `/opt/tacsit/ServerAI` with `rsync`
+- Ensures service user `serverai` exists
+- Creates/updates `.venv` and installs `requirements.txt`
+- Installs `/etc/systemd/system/serverai.service`
+- Enables/restarts `serverai` and shows status
+
+Notes:
+- Requires `python3`, `python3-venv`, `rsync`, and `sudo`.
+- If server path differs from `/opt/tacsit/ServerAI`, update `serverai.service` before deployment.
