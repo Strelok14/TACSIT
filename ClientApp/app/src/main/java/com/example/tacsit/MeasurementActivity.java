@@ -14,7 +14,9 @@ import com.example.tacsit.network.TelemetryApi;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.textfield.TextInputEditText;
 
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
 
 import retrofit2.Call;
 import retrofit2.Callback;
@@ -35,10 +37,15 @@ public class MeasurementActivity extends AppCompatActivity {
     private TextView statusText;
     private MaterialButton sendButton;
     private MaterialButton toggleAutoSendButton;
+    private MaterialButton preset500Button;
+    private MaterialButton preset1000Button;
+    private MaterialButton preset2000Button;
+    private MaterialButton preset3000Button;
 
     private TelemetryApi telemetryApi;
     private final Handler autoSendHandler = new Handler(Looper.getMainLooper());
     private boolean autoSendEnabled;
+    private boolean requestInFlight;
 
     private final Runnable autoSendRunnable = new Runnable() {
         @Override
@@ -46,7 +53,9 @@ public class MeasurementActivity extends AppCompatActivity {
             if (!autoSendEnabled) {
                 return;
             }
-            sendMeasurement(sendButton, false);
+            if (!requestInFlight) {
+                sendMeasurement(sendButton, false);
+            }
             autoSendHandler.postDelayed(this, resolveIntervalMs());
         }
     };
@@ -66,9 +75,10 @@ public class MeasurementActivity extends AppCompatActivity {
         statusText = findViewById(R.id.measurementStatusText);
         sendButton = findViewById(R.id.sendMeasurementButton);
         toggleAutoSendButton = findViewById(R.id.toggleAutoSendButton);
-        MaterialButton preset500Button = findViewById(R.id.preset500Button);
-        MaterialButton preset1000Button = findViewById(R.id.preset1000Button);
-        MaterialButton preset2000Button = findViewById(R.id.preset2000Button);
+        preset500Button = findViewById(R.id.preset500Button);
+        preset1000Button = findViewById(R.id.preset1000Button);
+        preset2000Button = findViewById(R.id.preset2000Button);
+        preset3000Button = findViewById(R.id.preset3000Button);
 
         String serverIp = getIntent().getStringExtra(EXTRA_SERVER_IP);
         if (TextUtils.isEmpty(serverIp) || "test".equalsIgnoreCase(serverIp.trim())) {
@@ -94,6 +104,8 @@ public class MeasurementActivity extends AppCompatActivity {
         preset500Button.setOnClickListener(view -> applyIntervalPreset(500));
         preset1000Button.setOnClickListener(view -> applyIntervalPreset(1000));
         preset2000Button.setOnClickListener(view -> applyIntervalPreset(2000));
+        preset3000Button.setOnClickListener(view -> applyIntervalPreset(3000));
+        applyIntervalPreset(1000);
     }
 
     @Override
@@ -145,10 +157,34 @@ public class MeasurementActivity extends AppCompatActivity {
 
     private void applyIntervalPreset(int intervalMs) {
         intervalMsEditText.setText(String.valueOf(intervalMs));
+        updatePresetButtons(intervalMs);
         statusText.setText(getString(R.string.measurement_status_preset_selected, intervalMs));
     }
 
+    private void updatePresetButtons(int selectedIntervalMs) {
+        List<MaterialButton> presetButtons = new ArrayList<>();
+        presetButtons.add(preset500Button);
+        presetButtons.add(preset1000Button);
+        presetButtons.add(preset2000Button);
+        presetButtons.add(preset3000Button);
+
+        int[] intervals = {500, 1000, 2000, 3000};
+        for (int index = 0; index < presetButtons.size(); index++) {
+            MaterialButton button = presetButtons.get(index);
+            if (button == null) {
+                continue;
+            }
+            boolean selected = intervals[index] == selectedIntervalMs;
+            button.setAlpha(selected ? 1.0f : 0.65f);
+        }
+    }
+
     private void sendMeasurement(MaterialButton sendButton, boolean showSendingStatus) {
+        if (requestInFlight) {
+            statusText.setText(getString(R.string.measurement_status_request_in_flight));
+            return;
+        }
+
         String beaconIdValue = textOf(beaconIdEditText);
         String anchorIdValue = textOf(anchorIdEditText);
         String distanceValue = textOf(distanceEditText);
@@ -193,21 +229,43 @@ public class MeasurementActivity extends AppCompatActivity {
         if (showSendingStatus) {
             statusText.setText(getString(R.string.measurement_status_sending));
         }
+        requestInFlight = true;
+        updateActionButtons();
 
         telemetryApi.sendMeasurement(request).enqueue(new Callback<>() {
             @Override
             public void onResponse(Call<com.google.gson.JsonElement> call, Response<com.google.gson.JsonElement> response) {
+                requestInFlight = false;
+                updateActionButtons();
                 if (response.isSuccessful()) {
                     statusText.setText(getString(R.string.measurement_status_success));
                 } else if (response.code() == 429) {
-                    statusText.setText(getString(R.string.measurement_status_rate_limited));
+                    stopAutoSendWithStatus(getString(R.string.measurement_status_rate_limited));
+                } else if (response.code() == 401) {
+                    stopAutoSendWithStatus(getString(R.string.measurement_status_unauthorized));
+                } else if (response.code() == 400) {
+                    statusText.setText(getString(R.string.measurement_status_bad_request));
                 } else {
-                    statusText.setText(getString(R.string.measurement_status_server_error));
+                    statusText.setText(getString(R.string.measurement_status_server_error_code, response.code()));
                 }
             }
 
             @Override
             public void onFailure(Call<com.google.gson.JsonElement> call, Throwable throwable) {
+                requestInFlight = false;
+                updateActionButtons();
+                if (autoSendEnabled) {
+                    autoSendEnabled = false;
+                    autoSendHandler.removeCallbacks(autoSendRunnable);
+                    toggleAutoSendButton.setText(getString(R.string.start_auto_send));
+                    statusText.setText(getString(
+                        R.string.measurement_status_network_error_auto_paused,
+                        networkReason(throwable),
+                        networkDetails(throwable)
+                    ));
+                    updateActionButtons();
+                    return;
+                }
                 statusText.setText(getString(
                         R.string.measurement_status_network_error_details,
                         networkReason(throwable),
@@ -215,6 +273,21 @@ public class MeasurementActivity extends AppCompatActivity {
                 ));
             }
         });
+    }
+
+    private void stopAutoSendWithStatus(String message) {
+        if (autoSendEnabled) {
+            autoSendEnabled = false;
+            autoSendHandler.removeCallbacks(autoSendRunnable);
+            toggleAutoSendButton.setText(getString(R.string.start_auto_send));
+        }
+        statusText.setText(message);
+        updateActionButtons();
+    }
+
+    private void updateActionButtons() {
+        sendButton.setEnabled(!requestInFlight && telemetryApi != null);
+        toggleAutoSendButton.setEnabled(telemetryApi != null);
     }
 
     private String networkReason(Throwable throwable) {
