@@ -72,6 +72,7 @@ public final class AiCameraActivity extends AppCompatActivity {
 
         surfaceViewRenderer = findViewById(R.id.aiSurfaceView);
         previewView = findViewById(R.id.aiPreviewView);
+        previewView.setScaleType(PreviewView.ScaleType.FILL_CENTER);
         overlayView = findViewById(R.id.aiOverlayView);
         signalUrlEditText = findViewById(R.id.signalUrlEditText);
         statusTextView = findViewById(R.id.aiStatusTextView);
