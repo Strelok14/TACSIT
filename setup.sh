@@ -46,20 +46,68 @@ Security__SecretStoreDirectory=$Security__SecretStoreDirectory
 EOF
 fi
 
-if [[ -x "$POSTGRES_LINUX_DIR/bin/initdb" && ! -d "$ROOT_DIR/App_Data/postgres/base" ]]; then
-  "$POSTGRES_LINUX_DIR/bin/initdb" -D "$ROOT_DIR/App_Data/postgres"
-elif [[ -d "$POSTGRES_LINUX_SOURCE_DIR" ]]; then
-  echo "PostgreSQL linux binaries not found; source is present at $POSTGRES_LINUX_SOURCE_DIR"
+# --- Redis: auto-build from source if prebuilt binary is missing ---
+REDIS_BIN="$OFFLINE_DIR/redis/linux-x64/redis-server"
+if [[ ! -x "$REDIS_BIN" ]]; then
+  REDIS_SRC_DIR=""
+  # Find the extracted source directory (redis-x.y.z/)
+  for d in "$REDIS_LINUX_SOURCE_DIR"/redis-*/; do
+    [[ -d "$d" ]] && REDIS_SRC_DIR="$d" && break
+  done
+
+  if [[ -n "$REDIS_SRC_DIR" ]]; then
+    echo "Building Redis from source: $REDIS_SRC_DIR"
+    if ! command -v make &>/dev/null || ! command -v gcc &>/dev/null; then
+      echo "ERROR: 'make' and 'gcc' are required to build Redis from source." >&2
+      echo "  Install them: apt install -y build-essential" >&2
+      exit 1
+    fi
+    ( cd "$REDIS_SRC_DIR" && make -j"$(nproc)" )
+    mkdir -p "$OFFLINE_DIR/redis/linux-x64"
+    cp "$REDIS_SRC_DIR/src/redis-server" "$REDIS_BIN"
+    echo "Redis built OK: $REDIS_BIN"
+  else
+    echo "ERROR: No Redis binary and no source found." >&2
+    echo "  Run download_offline_deps.ps1 on an online machine first." >&2
+    exit 1
+  fi
 fi
 
-if [[ -x "$OFFLINE_DIR/redis/linux-x64/redis-server" ]]; then
-  nohup "$OFFLINE_DIR/redis/linux-x64/redis-server" --port 6379 --save "" --appendonly no > "$ROOT_DIR/App_Data/logs/redis.log" 2>&1 &
-elif [[ -d "$REDIS_LINUX_SOURCE_DIR" ]]; then
-  echo "Redis linux binaries not found; source is present at $REDIS_LINUX_SOURCE_DIR"
-fi
+nohup "$REDIS_BIN" --port 6379 --save "" --appendonly no > "$ROOT_DIR/App_Data/logs/redis.log" 2>&1 &
+echo "Redis started (pid $!)"
 
+# --- PostgreSQL: prebuilt binaries or system-installed ---
+PG_CTL=""
 if [[ -x "$POSTGRES_LINUX_DIR/bin/pg_ctl" ]]; then
-  "$POSTGRES_LINUX_DIR/bin/pg_ctl" -D "$ROOT_DIR/App_Data/postgres" -l "$ROOT_DIR/App_Data/logs/postgres.log" start || true
+  PG_CTL="$POSTGRES_LINUX_DIR/bin/pg_ctl"
+  PG_INITDB="$POSTGRES_LINUX_DIR/bin/initdb"
+elif command -v pg_ctlcluster &>/dev/null; then
+  echo "Using system PostgreSQL (pg_ctlcluster). Skipping initdb — manage via systemd."
+  PG_CTL=""
+elif command -v pg_ctl &>/dev/null; then
+  PG_CTL="$(command -v pg_ctl)"
+  PG_INITDB="$(command -v initdb)"
+else
+  echo "ERROR: PostgreSQL binaries not found." >&2
+  echo "" >&2
+  echo "  Option A (recommended, needs any internet/mirror):" >&2
+  echo "    apt install -y postgresql-16" >&2
+  echo "" >&2
+  echo "  Option B (full offline, download .deb on Windows):" >&2
+  echo "    1. On Windows, open https://apt.postgresql.org in a browser." >&2
+  echo "    2. Download postgresql-16, libpq5, and dependencies into a folder." >&2
+  echo "    3. Copy folder to this machine." >&2
+  echo "    4. dpkg -i *.deb" >&2
+  echo "" >&2
+  echo "  Then re-run: ./setup.sh" >&2
+  exit 1
+fi
+
+if [[ -n "$PG_CTL" ]]; then
+  if [[ ! -d "$ROOT_DIR/App_Data/postgres/base" ]]; then
+    "$PG_INITDB" -D "$ROOT_DIR/App_Data/postgres"
+  fi
+  "$PG_CTL" -D "$ROOT_DIR/App_Data/postgres" -l "$ROOT_DIR/App_Data/logs/postgres.log" start || true
 fi
 
 dotnet restore "$SERVER_DIR/StrikeballServer.csproj" --packages "$OFFLINE_DIR/nuget"

@@ -49,14 +49,35 @@
 ## 4. Развёртывание на Linux (офлайн)
 
 1. Скопировать проект, например в `/opt/tacid/StrikeballServer`.
-2. Выполнить:
-   - `cd /opt/tacid/StrikeballServer`
-   - `chmod +x setup.sh run.sh`
-   - `./setup.sh`
-3. Запустить сервер:
-   - `./run.sh`
+2. Установить PostgreSQL (требуется один раз):
 
-Примечание по Linux: если нет готовых бинарников PostgreSQL/Redis, скрипт использует исходники как fallback. Рекомендуется заранее положить готовые Linux binaries в `offline_deps/postgres/linux-x64` и `offline_deps/redis/linux-x64`.
+   **Вариант A — если есть доступ к интернету или локальному зеркалу:**
+   ```bash
+   apt install -y postgresql-16
+   ```
+
+   **Вариант B — полный офлайн (скачать .deb на Windows, перенести флешкой):**
+   ```bash
+   # На Windows — скачать пакеты (открыть в браузере):
+   # https://apt.postgresql.org/pub/repos/apt/pool/main/p/postgresql-16/
+   # Нужны: postgresql-16_16.x_amd64.deb, postgresql-client-16, libpq5, postgresql-common
+   # Скопировать .deb-файлы на Linux, затем:
+   dpkg -i *.deb
+   ```
+
+3. Выполнить:
+   ```bash
+   cd /opt/tacid/StrikeballServer
+   chmod +x setup.sh run.sh
+   ./setup.sh
+   ```
+   > Redis компилируется из исходников автоматически (нужны `gcc` и `make` — есть по умолчанию).  
+   > Если `gcc`/`make` нет: `apt install -y build-essential`
+
+4. Запустить сервер:
+   ```bash
+   ./run.sh
+   ```
 
 ## 5. Проверка после старта
 
