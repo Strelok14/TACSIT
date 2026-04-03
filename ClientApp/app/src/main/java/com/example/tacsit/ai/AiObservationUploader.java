@@ -2,15 +2,12 @@ package com.example.tacsit.ai;
 
 import androidx.annotation.NonNull;
 
-import com.example.tacsit.network.AiTelemetryApi;
-import com.example.tacsit.network.AuthServiceFactory;
-import com.google.gson.JsonElement;
+import com.example.tacsit.network.DetectionUploadPayload;
+import com.example.tacsit.network.SessionManager;
+import com.example.tacsit.network.SignedPayloadDispatcher;
 
 import java.util.List;
-
-import retrofit2.Callback;
-import retrofit2.Response;
-import retrofit2.Retrofit;
+import java.util.stream.Collectors;
 
 public final class AiObservationUploader {
 
@@ -18,12 +15,11 @@ public final class AiObservationUploader {
         void onRejected();
     }
 
-    private final AiTelemetryApi api;
+    private final String serverUrl;
     private final Listener listener;
 
     public AiObservationUploader(@NonNull String serverInput, Listener listener) {
-        Retrofit retrofit = AuthServiceFactory.createRetrofit(serverInput);
-        this.api = retrofit.create(AiTelemetryApi.class);
+        this.serverUrl = serverInput;
         this.listener = listener;
     }
 
@@ -32,20 +28,35 @@ public final class AiObservationUploader {
             return;
         }
 
-        api.sendObservations(new AiObservationBatchRequest(observations)).enqueue(new Callback<>() {
-            @Override
-            public void onResponse(retrofit2.Call<JsonElement> call, Response<JsonElement> response) {
-                if (!response.isSuccessful() && listener != null) {
-                    listener.onRejected();
-                }
-            }
+        List<DetectionUploadPayload.DetectionPayload> payloads = observations.stream()
+                .map(item -> new DetectionUploadPayload.DetectionPayload(
+                        null,
+                        "ally".equalsIgnoreCase(item.classId),
+                        item.classId,
+                        toSkeletonJson(item),
+                        item.latitude,
+                        item.longitude,
+                        item.altitudeM,
+                        item.rangeM
+                ))
+                .collect(Collectors.toList());
 
-            @Override
-            public void onFailure(retrofit2.Call<JsonElement> call, Throwable throwable) {
-                if (listener != null) {
-                    listener.onRejected();
-                }
-            }
-        });
+        boolean success = SignedPayloadDispatcher.postSignedJson(serverUrl, "api/detections", new DetectionUploadPayload(payloads));
+        if (!success && listener != null) {
+            listener.onRejected();
+        }
+    }
+
+    private String toSkeletonJson(AiObservation observation) {
+        return "{" +
+                "\"deviceId\":\"" + observation.deviceId + "\"," +
+                "\"timestampMs\":" + observation.timestampMs + "," +
+                "\"frameWidth\":" + observation.frameWidth + "," +
+                "\"frameHeight\":" + observation.frameHeight + "," +
+                "\"bboxCxPx\":" + observation.bboxCxPx + "," +
+                "\"bboxCyPx\":" + observation.bboxCyPx + "," +
+                "\"bboxWPx\":" + observation.bboxWPx + "," +
+                "\"bboxHPx\":" + observation.bboxHPx +
+                "}";
     }
 }

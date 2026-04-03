@@ -23,7 +23,17 @@ public final class AuthServiceFactory {
 
 	public static Retrofit createRetrofit(String serverInput) {
 		String baseUrl = normalizeBaseUrl(serverInput);
-		OkHttpClient client = new OkHttpClient.Builder()
+		OkHttpClient client = createAuthenticatedHttpClient(baseUrl);
+		return new Retrofit.Builder()
+				.baseUrl(baseUrl)
+				.client(client)
+				.addConverterFactory(GsonConverterFactory.create())
+				.build();
+	}
+
+	public static OkHttpClient createAuthenticatedHttpClient(String serverInput) {
+		String baseUrl = normalizeBaseUrl(serverInput);
+		return new OkHttpClient.Builder()
 				.addInterceptor(chain -> {
 					Request req = chain.request();
 					String tok = SessionManager.getAccessToken();
@@ -34,11 +44,6 @@ public final class AuthServiceFactory {
 							.addHeader("Authorization", "Bearer " + tok).build());
 				})
 				.authenticator(new TokenRefreshAuthenticator(baseUrl))
-				.build();
-		return new Retrofit.Builder()
-				.baseUrl(baseUrl)
-				.client(client)
-				.addConverterFactory(GsonConverterFactory.create())
 				.build();
 	}
 

@@ -51,6 +51,7 @@ internal sealed class EnvConfig
 
     public string? AspNetCoreEnvironment { get => Get("ASPNETCORE_ENVIRONMENT"); set => Set("ASPNETCORE_ENVIRONMENT", value); }
     public string? AspNetCoreUrls        { get => Get("ASPNETCORE_URLS");        set => Set("ASPNETCORE_URLS", value); }
+    public string? SecretStoreDirectory  { get => Get("Security__SecretStoreDirectory"); set => Set("Security__SecretStoreDirectory", value); }
 
     // ═══ База данных / Redis ═════════════════════════════════════════════
 
@@ -156,6 +157,7 @@ internal sealed class EnvConfig
             Kv("ASPNETCORE_ENVIRONMENT", "Production"),
             Kv("ASPNETCORE_URLS", "http://0.0.0.0:5001"),
             Kv("TACID_ALLOW_INSECURE_HTTP", "false"),
+            Kv("Security__SecretStoreDirectory", "/opt/tacid/keys"),
             Blank(),
             Comment("# ─── База данных ─────────────────────────────────────────────"),
             Kv("ConnectionStrings__PostgreSQL",
@@ -209,9 +211,13 @@ internal sealed class EnvConfig
             issues.Add(new ConfigIssue(Severity.Warning, "TACID_ALLOW_INSECURE_HTTP",
                 "HTTP-режим активен — JWT-токены передаются открытым текстом. Только LAN/VPN!"));
 
+        if (string.IsNullOrWhiteSpace(SecretStoreDirectory))
+            issues.Add(new ConfigIssue(Severity.Warning, "Security__SecretStoreDirectory",
+                "Не задан каталог файловых ключей. По умолчанию сервер создаст App_Data/keys рядом с приложением"));
+
         if (!string.IsNullOrWhiteSpace(PlayerLogin) && string.IsNullOrWhiteSpace(PlayerBeaconId))
             issues.Add(new ConfigIssue(Severity.Warning, "TACID_PLAYER_BEACON_ID",
-                "Player создан без привязки к маяку — телеметрия не будет ассоциирована с игроком"));
+                "Legacy UWB-поле не заполнено. Для GPS-ветки не требуется, но для старого telemetry API останется пустым"));
 
         return issues;
     }

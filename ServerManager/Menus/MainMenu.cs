@@ -33,11 +33,11 @@ internal static class MainMenu
 
             // ─── Главное меню ─────────────────────────────────────────────
             ConsoleUI.Header("Меню");
-            ConsoleUI.MenuItem(1, "Управление ключами              (JWT, Master Key, маяки)");
-            ConsoleUI.MenuItem(2, "Учётные данные                  (admin / observer / player)");
-            ConsoleUI.MenuItem(3, "Режим подключения               (HTTP / HTTPS, порт, URL)");
-            ConsoleUI.MenuItem(4, "База данных и Redis             (PostgreSQL, Redis)");
-            ConsoleUI.MenuItem(5, "Параметры безопасности          (timestamp, rate limit, ротация)");
+            ConsoleUI.MenuItem(1, "Управление ключами              (JWT, Master Key, HMAC users)");
+            ConsoleUI.MenuItem(2, "Учётные данные                  (admin / observer / player bootstrap)");
+            ConsoleUI.MenuItem(3, "Режим подключения               (LAN HTTP / HTTPS, порт, URL)");
+            ConsoleUI.MenuItem(4, "База данных и Redis             (PostgreSQL, Redis, offline)");
+            ConsoleUI.MenuItem(5, "Параметры безопасности          (timestamp, rate limit, secret store)");
             ConsoleUI.MenuItem(6, "Проверить конфигурацию          (полная диагностика)");
             ConsoleUI.MenuItem(7, $"Сохранить файл                  [{envFilePath}]");
             ConsoleUI.MenuItem(8, "Показать env-файл               (вывести содержимое)");

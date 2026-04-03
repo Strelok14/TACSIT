@@ -120,6 +120,8 @@ public class AuthResponseDto
     public string Token { get; set; } = string.Empty;
     public string Message { get; set; } = string.Empty;
     public string Role { get; set; } = string.Empty;
+    public int? UserId { get; set; }
+    public string? HmacKey { get; set; }
     public DateTime? ExpiresAtUtc { get; set; }
     public string? RefreshToken { get; set; }
     public DateTime? RefreshExpiresAtUtc { get; set; }
@@ -140,4 +142,87 @@ public class RefreshRequestDto
 public class LogoutRequestDto
 {
     public string? RefreshToken { get; set; }
+}
+
+public class GpsPositionRequestDto
+{
+    [Range(-90d, 90d)]
+    public double Latitude { get; set; }
+
+    [Range(-180d, 180d)]
+    public double Longitude { get; set; }
+
+    public double? Altitude { get; set; }
+
+    [Range(0d, 500d)]
+    public double? Accuracy { get; set; }
+}
+
+public class DetectionItemDto
+{
+    public int? TargetUserId { get; set; }
+
+    public bool IsAlly { get; set; }
+
+    [MaxLength(64)]
+    public string Label { get; set; } = "person";
+
+    [Required]
+    public string SkeletonData { get; set; } = "{}";
+
+    [Range(-90d, 90d)]
+    public double? Latitude { get; set; }
+
+    [Range(-180d, 180d)]
+    public double? Longitude { get; set; }
+
+    public double? Altitude { get; set; }
+
+    [Range(0d, 500d)]
+    public double? Accuracy { get; set; }
+}
+
+public class DetectionsUploadRequestDto
+{
+    [Required]
+    [MinLength(1)]
+    public List<DetectionItemDto> Detections { get; set; } = new();
+}
+
+public class MapUserPositionDto
+{
+    public long PositionId { get; set; }
+    public int UserId { get; set; }
+    public string Login { get; set; } = string.Empty;
+    public string DisplayName { get; set; } = string.Empty;
+    public double Latitude { get; set; }
+    public double Longitude { get; set; }
+    public double? Altitude { get; set; }
+    public double? Accuracy { get; set; }
+    public DateTime Timestamp { get; set; }
+}
+
+public class MapDetectionDto
+{
+    public long DetectionId { get; set; }
+    public int UserId { get; set; }
+    public string ReporterLogin { get; set; } = string.Empty;
+    public int? TargetUserId { get; set; }
+    public bool IsAlly { get; set; }
+    public string Label { get; set; } = string.Empty;
+    public string SkeletonData { get; set; } = string.Empty;
+    public double? Latitude { get; set; }
+    public double? Longitude { get; set; }
+    public double? Altitude { get; set; }
+    public double? Accuracy { get; set; }
+    public DateTime Timestamp { get; set; }
+}
+
+public class DemoBootstrapUserDto
+{
+    public int Id { get; set; }
+    public string Login { get; set; } = string.Empty;
+    public string Password { get; set; } = string.Empty;
+    public string Role { get; set; } = "player";
+    public string DisplayName { get; set; } = string.Empty;
 }

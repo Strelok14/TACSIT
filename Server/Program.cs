@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -8,9 +9,38 @@ using StrikeballServer.Hubs;
 using StrikeballServer.Middleware;
 using StrikeballServer.Services;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
+
+var secretStoreDirectory = builder.Configuration["Security:SecretStoreDirectory"]
+    ?? Path.Combine(builder.Environment.ContentRootPath, "App_Data", "keys");
+
+Directory.CreateDirectory(secretStoreDirectory);
+
+var resolvedJwtSigningKey = ResolveOrCreateSecret(
+    builder.Configuration["Jwt:SigningKey"],
+    Environment.GetEnvironmentVariable("TACID_JWT_SIGNING_KEY"),
+    Path.Combine(secretStoreDirectory, "jwt-signing.key"),
+    48,
+    valueFactory: bytes => Convert.ToBase64String(bytes));
+
+var resolvedMasterKeyB64 = ResolveOrCreateSecret(
+    builder.Configuration["Security:MasterKeyB64"],
+    Environment.GetEnvironmentVariable("TACID_MASTER_KEY_B64"),
+    Path.Combine(secretStoreDirectory, "master-key.b64"),
+    32,
+    valueFactory: bytes => Convert.ToBase64String(bytes));
+
+builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+{
+    ["Jwt:SigningKey"] = resolvedJwtSigningKey,
+    ["Security:MasterKeyB64"] = resolvedMasterKeyB64,
+    ["Security:SecretStoreDirectory"] = secretStoreDirectory
+});
 
 var allowInsecureHttp = builder.Configuration.GetValue<bool>("Security:AllowInsecureHttp")
     || string.Equals(
@@ -79,12 +109,10 @@ builder.Services.AddCors(options =>
 });
 
 var jwtSigningKey = builder.Configuration["Jwt:SigningKey"]
-    ?? Environment.GetEnvironmentVariable("TACID_JWT_SIGNING_KEY")
-    ?? throw new InvalidOperationException("JWT signing key is required (TACID_JWT_SIGNING_KEY)");
+    ?? throw new InvalidOperationException("JWT signing key is required");
 
 var masterKeyB64 = builder.Configuration["Security:MasterKeyB64"]
-    ?? Environment.GetEnvironmentVariable("TACID_MASTER_KEY_B64")
-    ?? throw new InvalidOperationException("Master key is required (TACID_MASTER_KEY_B64, Base64 32 bytes)");
+    ?? throw new InvalidOperationException("Master key is required");
 
 byte[] masterKey;
 try
@@ -168,11 +196,13 @@ builder.Services.AddScoped<IPositioningService, PositioningService>();
 builder.Services.AddScoped<IFilteringService, FilteringService>();
 builder.Services.AddSingleton<ITelemetryService, TelemetryService>();
 builder.Services.AddScoped<IBeaconKeyStore, BeaconKeyStore>();
+builder.Services.AddScoped<IUserHmacKeyStore, UserHmacKeyStore>();
 builder.Services.AddScoped<ISecurityEventLogger, SecurityEventLogger>();
 builder.Services.AddSingleton<IReplayProtectionService, RedisReplayProtectionService>();
 builder.Services.AddSingleton<ITelemetryRateLimiter, RedisTelemetryRateLimiter>();
 builder.Services.AddSingleton<IJwtDenylistService, RedisJwtDenylistService>();
 builder.Services.AddHostedService<BeaconKeyRotationHostedService>();
+builder.Services.AddSingleton<IPasswordHasher<StrikeballServer.Models.User>, PasswordHasher<StrikeballServer.Models.User>>();
 
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
@@ -253,14 +283,18 @@ await using (var scope = app.Services.CreateAsyncScope())
     {
         await SecuritySchemaMigrator.ApplyAsync(dbContext, app.Logger);
     }
+    await GpsLocalDemoBootstrapper.EnsureSeedDataAsync(app.Services, builder.Configuration, app.Logger);
     app.Logger.LogInformation("База данных готова");
 }
 
 app.UseCors("StrictCors");
+app.UseDefaultFiles();
+app.UseStaticFiles();
 app.UseAuthentication();
 
 // Криптографический входной фильтр телеметрии выполняется перед авторизацией.
 app.UseMiddleware<TelemetrySecurityMiddleware>();
+app.UseMiddleware<SignedPayloadSecurityMiddleware>();
 
 app.UseAuthorization();
 app.MapControllers();
@@ -271,6 +305,7 @@ app.Logger.LogInformation("Strikeball Positioning Server started [{environment}]
 app.Logger.LogInformation("SignalR Hub endpoint: /hubs/positioning");
 app.Logger.LogInformation("HTTPS enforcement: {mode}", requireHttps ? "enabled" : "disabled (LAN/VPN mode)");
 app.Logger.LogInformation("Database provider: {provider}", builder.Environment.IsProduction() ? "PostgreSQL" : "SQLite");
+app.Logger.LogInformation("Secret store directory: {dir}", secretStoreDirectory);
 
 if (app.Environment.IsProduction())
 {
@@ -282,6 +317,29 @@ if (app.Environment.IsProduction())
 }
 
 app.Run();
+
+static string ResolveOrCreateSecret(string? configuredValue, string? envValue, string filePath, int byteCount, Func<byte[], string> valueFactory)
+{
+    if (!string.IsNullOrWhiteSpace(configuredValue))
+    {
+        return configuredValue;
+    }
+
+    if (!string.IsNullOrWhiteSpace(envValue))
+    {
+        return envValue;
+    }
+
+    if (File.Exists(filePath))
+    {
+        return File.ReadAllText(filePath).Trim();
+    }
+
+    var bytes = RandomNumberGenerator.GetBytes(byteCount);
+    var createdValue = valueFactory(bytes);
+    File.WriteAllText(filePath, createdValue + Environment.NewLine);
+    return createdValue;
+}
 
 // Делаем Program доступным для WebApplicationFactory в интеграционных тестах.
 public partial class Program { }

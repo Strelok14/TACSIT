@@ -1,11 +1,15 @@
 package com.example.tacsit;
 
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.text.TextUtils;
 import android.widget.Toast;
 
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.content.ContextCompat;
 
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.textfield.TextInputEditText;
@@ -25,6 +29,15 @@ public class MainActivity extends AppCompatActivity {
     private TextInputEditText ipEditText;
     private TextInputEditText loginEditText;
     private TextInputEditText passwordEditText;
+    private String pendingServerIp;
+
+    private final ActivityResultLauncher<String> locationPermissionLauncher =
+            registerForActivityResult(new ActivityResultContracts.RequestPermission(), granted -> {
+                if (granted) {
+                    startTrackingService();
+                }
+                openMenuScreen(pendingServerIp);
+            });
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -73,8 +86,9 @@ public class MainActivity extends AppCompatActivity {
 
                 AuthResponse body = response.body();
                 if (body != null && body.isSuccess()) {
-                    SessionManager.setSession(body.getToken(), body.getRefreshToken(), body.getRole(), serverIp);
-                    openMenuScreen(serverIp);
+                    pendingServerIp = serverIp;
+                    SessionManager.setSession(body.getToken(), body.getRefreshToken(), body.getRole(), serverIp, body.getUserId(), body.getHmacKey());
+                    requestLocationAndContinue();
                     return;
                 }
 
@@ -97,6 +111,22 @@ public class MainActivity extends AppCompatActivity {
         Intent intent = new Intent(this, MenuActivity.class);
         intent.putExtra(MenuActivity.EXTRA_SERVER_IP, serverIp);
         startActivity(intent);
+    }
+
+    private void requestLocationAndContinue() {
+        if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+            startTrackingService();
+            openMenuScreen(pendingServerIp);
+            return;
+        }
+
+        locationPermissionLauncher.launch(android.Manifest.permission.ACCESS_FINE_LOCATION);
+    }
+
+    private void startTrackingService() {
+        Intent serviceIntent = new Intent(this, com.example.tacsit.tracking.LocalTrackingService.class);
+        serviceIntent.putExtra(com.example.tacsit.tracking.LocalTrackingService.EXTRA_SERVER_URL, pendingServerIp);
+        ContextCompat.startForegroundService(this, serviceIntent);
     }
 
     private String getText(TextInputEditText editText) {

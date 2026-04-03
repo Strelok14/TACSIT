@@ -59,19 +59,7 @@ public class PositioningHub : Hub
     /// </summary>
     public async Task SubscribeToBeacon(int beaconId)
     {
-        // Для роли player ограничиваем доступ только к своему beacon_id.
-        var role = Context.User?.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Role)?.Value;
-        var ownBeaconRaw = Context.User?.Claims.FirstOrDefault(c => c.Type == "beacon_id")?.Value;
-        if (string.Equals(role, "player", StringComparison.OrdinalIgnoreCase))
-        {
-            if (!int.TryParse(ownBeaconRaw, out var ownBeaconId) || ownBeaconId != beaconId)
-            {
-                _logger.LogWarning("🚫 Игрок {connectionId} попытался подписаться на чужой beacon {beaconId}", Context.ConnectionId, beaconId);
-                throw new HubException("Access denied for this beacon");
-            }
-        }
-
-        var groupName = $"Beacon_{beaconId}";
+        var groupName = $"User_{beaconId}";
         await Groups.AddToGroupAsync(Context.ConnectionId, groupName);
         
         _logger.LogInformation($"📡 Клиент {Context.ConnectionId} подписался на маяк {beaconId}");
@@ -87,7 +75,7 @@ public class PositioningHub : Hub
     /// </summary>
     public async Task UnsubscribeFromBeacon(int beaconId)
     {
-        var groupName = $"Beacon_{beaconId}";
+        var groupName = $"User_{beaconId}";
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, groupName);
         
         _logger.LogInformation($"📡 Клиент {Context.ConnectionId} отписался от маяка {beaconId}");
@@ -105,6 +93,16 @@ public class PositioningHub : Hub
             version = "1.0.0"
         });
     }
+
+    public Task SubscribeToAll()
+    {
+        return Groups.AddToGroupAsync(Context.ConnectionId, "AllTrackers");
+    }
+
+    public Task UnsubscribeFromAll()
+    {
+        return Groups.RemoveFromGroupAsync(Context.ConnectionId, "AllTrackers");
+    }
 }
 
 /// <summary>
@@ -120,7 +118,20 @@ public static class PositioningHubExtensions
         int beaconId, 
         PositionDto position)
     {
-        var groupName = $"Beacon_{beaconId}";
+        var groupName = $"User_{beaconId}";
         await hubContext.Clients.Group(groupName).SendAsync("PositionUpdate", position);
+    }
+
+    public static async Task SendGpsUpdateAsync(this IHubContext<PositioningHub> hubContext, MapUserPositionDto position)
+    {
+        await hubContext.Clients.Group("AllTrackers").SendAsync("GpsPositionUpdated", position);
+        await hubContext.Clients.Group($"User_{position.UserId}").SendAsync("GpsPositionUpdated", position);
+        await hubContext.Clients.All.SendAsync("GpsPositionUpdated", position);
+    }
+
+    public static async Task SendDetectionsAsync(this IHubContext<PositioningHub> hubContext, IReadOnlyList<MapDetectionDto> detections)
+    {
+        await hubContext.Clients.Group("AllTrackers").SendAsync("DetectionsCreated", detections);
+        await hubContext.Clients.All.SendAsync("DetectionsCreated", detections);
     }
 }

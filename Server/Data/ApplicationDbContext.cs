@@ -21,6 +21,9 @@ public class ApplicationDbContext : DbContext
     public DbSet<Anomaly> Anomalies { get; set; } = null!;
     public DbSet<BeaconSecret> BeaconSecrets { get; set; } = null!;
     public DbSet<RefreshToken> RefreshTokens { get; set; } = null!;
+    public DbSet<User> Users { get; set; } = null!;
+    public DbSet<GpsPosition> GpsPositions { get; set; } = null!;
+    public DbSet<DetectedPerson> DetectedPersons { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -141,6 +144,54 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.CreatedAtUtc).IsRequired();
             entity.HasIndex(e => e.Token).IsUnique();
             entity.HasIndex(e => new { e.UserId, e.IsRevoked });
+        });
+
+        modelBuilder.Entity<User>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Login).IsRequired().HasMaxLength(64);
+            entity.Property(e => e.PasswordHash).IsRequired().HasMaxLength(256);
+            entity.Property(e => e.Role).IsRequired().HasMaxLength(32);
+            entity.Property(e => e.DisplayName).HasMaxLength(128);
+            entity.Property(e => e.CreatedAtUtc).IsRequired();
+            entity.HasIndex(e => e.Login).IsUnique();
+        });
+
+        modelBuilder.Entity<GpsPosition>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Latitude).IsRequired();
+            entity.Property(e => e.Longitude).IsRequired();
+            entity.Property(e => e.Timestamp).IsRequired();
+            entity.Property(e => e.SequenceNumber).IsRequired();
+            entity.HasOne(e => e.User)
+                .WithMany(u => u.GpsPositions)
+                .HasForeignKey(e => e.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(e => new { e.UserId, e.Timestamp });
+            entity.HasIndex(e => new { e.UserId, e.SequenceNumber }).IsUnique();
+        });
+
+        modelBuilder.Entity<DetectedPerson>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Label).HasMaxLength(64);
+            entity.Property(e => e.SkeletonData).IsRequired();
+            entity.Property(e => e.Timestamp).IsRequired();
+            entity.Property(e => e.SequenceNumber).IsRequired();
+
+            entity.HasOne(e => e.User)
+                .WithMany(u => u.ReportedDetections)
+                .HasForeignKey(e => e.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(e => e.TargetUser)
+                .WithMany()
+                .HasForeignKey(e => e.TargetUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasIndex(e => new { e.UserId, e.Timestamp });
+            entity.HasIndex(e => new { e.UserId, e.SequenceNumber });
         });
 
         // Seed initial data (optional)

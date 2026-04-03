@@ -16,6 +16,12 @@ public class AuthResponse {
     @SerializedName("role")
     private String role;
 
+    @SerializedName("userId")
+    private Integer userId;
+
+    @SerializedName("hmacKey")
+    private String hmacKey;
+
     @SerializedName("refreshToken")
     private String refreshToken;
 
@@ -36,6 +42,14 @@ public class AuthResponse {
 
     public String getRole() {
         return role;
+    }
+
+    public Integer getUserId() {
+        return userId;
+    }
+
+    public String getHmacKey() {
+        return hmacKey;
     }
 
     public String getRefreshToken() {

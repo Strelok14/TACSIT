@@ -40,6 +40,11 @@ return 1";
 
     public async Task<bool> AcceptPacketAsync(int beaconId, long sequence, long timestampMs, CancellationToken cancellationToken = default)
     {
+        return await AcceptPacketAsync(beaconId, "telemetry", sequence, timestampMs, cancellationToken);
+    }
+
+    public async Task<bool> AcceptPacketAsync(int subjectId, string channel, long sequence, long timestampMs, CancellationToken cancellationToken = default)
+    {
         var redis = _redis.Value;
         if (redis != null && redis.IsConnected)
         {
@@ -48,25 +53,26 @@ return 1";
                 var db = redis.GetDatabase();
                 var result = (int)await db.ScriptEvaluateAsync(
                     ReplayLua,
-                    new RedisKey[] { $"tacid:replay:{beaconId}" },
+                    new RedisKey[] { $"tacid:replay:{channel}:{subjectId}" },
                     new RedisValue[] { sequence });
 
                 return result == 1;
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Redis недоступен при replay-проверке, включаем fallback для beacon {beaconId}", beaconId);
+                _logger.LogWarning(ex, "Redis недоступен при replay-проверке, включаем fallback для subject {subjectId}", subjectId);
             }
         }
 
         // Graceful degradation: локальная защита от replay.
-        var last = _fallbackLastSeq.GetOrAdd(beaconId, -1);
+        var fallbackKey = HashCode.Combine(subjectId, channel);
+        var last = _fallbackLastSeq.GetOrAdd(fallbackKey, -1);
         if (sequence <= last)
         {
             return false;
         }
 
-        _fallbackLastSeq[beaconId] = sequence;
+        _fallbackLastSeq[fallbackKey] = sequence;
         return true;
     }
 

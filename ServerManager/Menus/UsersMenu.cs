@@ -22,10 +22,10 @@ internal static class UsersMenu
             ConsoleUI.StatusRow("player  BeaconID", config.PlayerBeaconId);
             Console.WriteLine();
 
-            ConsoleUI.Info("admin    — полный доступ: API управления якорями, маяками, ключами.");
-            ConsoleUI.Info("observer — только чтение: подключение к SignalR, просмотр карты (КПК).");
-            ConsoleUI.Info("player   — отправка телеметрии (маяк) + привязка к beacon_id.");
-            ConsoleUI.Warning("Учётные данные хранятся в ENV-файле открытым текстом.");
+            ConsoleUI.Info("admin    — полный доступ: пользователи, GPS, detections, offline deployment.");
+            ConsoleUI.Info("observer — просмотр карты, истории, SignalR/Web UI.");
+            ConsoleUI.Info("player   — Android клиент: GPS + detections + JWT/HMAC.");
+            ConsoleUI.Warning("Меню задаёт bootstrap-учётки для первого запуска; после старта сервер хранит пользователей в БД.");
             ConsoleUI.Warning("Права файла должны быть 640 (только root + группа strikeball).");
             Console.WriteLine();
 
@@ -53,7 +53,7 @@ internal static class UsersMenu
         ConsoleUI.Clear();
         ConsoleUI.PrintBanner();
         ConsoleUI.Header("Администратор (admin)");
-        ConsoleUI.Info("Имеет доступ к: /api/security, /api/beacons, /api/anchors, /api/telemetry (чтение).");
+            ConsoleUI.Info("Имеет доступ к пользователям, offline deployment и админским API GPS-демо.");
         Console.WriteLine();
 
         var login = ConsoleUI.Prompt("Логин (Enter = без изменений)", config.AdminLogin);
@@ -87,8 +87,8 @@ internal static class UsersMenu
         ConsoleUI.Clear();
         ConsoleUI.PrintBanner();
         ConsoleUI.Header("Наблюдатель (observer)");
-        ConsoleUI.Info("Права: подключение к SignalR Hub, получение позиций всех игроков.");
-        ConsoleUI.Info("Используется Android КПК наблюдателя (без маяка).");
+            ConsoleUI.Info("Права: подключение к SignalR Hub, веб-карте и истории перемещений.");
+            ConsoleUI.Info("Используется на ноутбуке наблюдателя или КПК без отправки GPS.");
         Console.WriteLine();
 
         var login = ConsoleUI.Prompt("Логин (Enter = без изменений)", config.ObserverLogin);
@@ -122,9 +122,9 @@ internal static class UsersMenu
         ConsoleUI.Clear();
         ConsoleUI.PrintBanner();
         ConsoleUI.Header("Игрок (player)");
-        ConsoleUI.Info("Права: отправка телеметрии POST /api/telemetry/measurement.");
-        ConsoleUI.Info("BeaconID связывает JWT-токен с конкретным маяком на игроке.");
-        ConsoleUI.Info("Claim 'beacon_id' добавляется в токен и используется сервером.");
+            ConsoleUI.Info("Права: отправка GPS POST /api/gps и detections POST /api/detections.");
+            ConsoleUI.Info("Legacy BeaconID сохранён только для совместимости со старым UWB API.");
+            ConsoleUI.Info("Для GPS ветки JWT связывается с user_id, а HMAC ключ выдаётся при логине.");
         Console.WriteLine();
 
         var login = ConsoleUI.Prompt("Логин (Enter = без изменений)", config.PlayerLogin);

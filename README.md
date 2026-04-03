@@ -1,262 +1,129 @@
-# T.A.C.I.D. — Tactical Combat Identification Device
+# T.A.C.I.D. GPS Local Demo
 
-Система позиционирования игроков в реальном времени на страйкбольном полигоне.
-UWB-маяки на игроках измеряют расстояния до стационарных якорей, сервер вычисляет
-координаты методом трилатерации и транслирует их Android КПК через SignalR.
+Ветка gps-local-demo переводит демонстрационный сценарий с UWB-маяков на GPS телефонов в локальной сети. UWB-код сохранён в проекте для совместимости и исследований, но основной контур этой ветки использует:
 
----
+- Android-клиенты с GPS и on-device AI.
+- ASP.NET Core 8 сервер с PostgreSQL, Redis, JWT, HMAC-SHA256, replay-защитой и rate limiting.
+- Простой web dashboard на встроенном статическом фронтенде.
+- Полностью офлайн-установимый набор через offline_deps, setup.sh и setup.ps1.
 
-## Архитектура
+## Что изменено в этой ветке
 
-```
-[Маяк STM32F405 + DWM3000]
-       │  HMAC-SHA256 пакет
-       │  (beacon_id, distances[], timestamp, seq, signature)
-       ▼ LTE / Wi-Fi / LoRa
-[Сервер ASP.NET Core 8]
-   ├── TelemetrySecurityMiddleware
-   │       rate limit → timestamp check → HMAC verify → replay check
-   ├── PositioningService   — трилатерация + фильтр Калмана
-   ├── PostgreSQL           — хранение измерений, позиций, ключей маяков
-   ├── Redis                — replay-защита, rate limit, JWT denylist
-   └── SignalR Hub /hubs/positioning
-               │  JSON позиции всех игроков
-               ▼ WebSocket (ws:// или wss://)
-[Android КПК (Java)]
-   ├── Retrofit + JWT auth  — POST /api/auth/login → access + refresh token
-   ├── SignalR клиент       — подписка на обновления позиций
-   └── osmdroid карта       — отображение игроков в реальном времени
-```
+- Добавлены сущности Users, GpsPositions и DetectedPersons.
+- AuthController переведён на пользователей из БД.
+- JWT содержит user_id и role.
+- HMAC теперь выдаётся на пользователя и шифруется в БД через AES-256-GCM.
+- Добавлены POST /api/gps и POST /api/detections.
+- Добавлены GET /api/gps/current, GET /api/gps/history/{userId}, GET /api/detections/recent.
+- Встроенный web UI доступен с корня сервера.
+- Android после логина запускает foreground GPS service с частотой 1 Гц.
 
----
+## Почему 1 Гц для GPS
 
-## Взаимодействие компонентов
+В локальной WiFi-сети для тактической карты 1 Гц даёт достаточно плавное обновление без лишней нагрузки на батарею и без входа в зону постоянных 429 при штатном лимите 10 пакетов/с на пользователя. Более высокий темп легко включить позже конфигом сервиса Android, но для демо-ветки 1 Гц практичнее и устойчивее.
 
-### Маяк → Сервер (телеметрия)
+## Контур безопасности
 
-Маяк отправляет `POST /api/telemetry/measurement` с JSON-пакетом:
+1. Пользователь логинится через /api/auth/login.
+2. Сервер выдаёт JWT и индивидуальный HMAC ключ в Base64.
+3. Android хранит их в EncryptedSharedPreferences.
+4. Каждый пакет на /api/gps и /api/detections подписывается как userId|seq|timestamp|payload.
+5. Сервер проверяет JWT, X-User-Id, подпись, timestamp, replay и rate limit.
 
-```json
-{
-  "beaconId": 1,
-  "distances": [
-    {"anchorId": 1, "distance": 5.21, "rssi": -45},
-    {"anchorId": 2, "distance": 7.30, "rssi": -48},
-    {"anchorId": 3, "distance": 4.83, "rssi": -43}
-  ],
-  "timestamp": 1711450012000,
-  "batteryLevel": 87,
-  "sequence": 1042,
-  "keyVersion": 1,
-  "signature": "<Base64 HMAC-SHA256>"
-}
-```
+## Серверные endpoints
 
-Сервер проверяет (в порядке):
-1. Rate limit по `beaconId` + IP (Redis)
-2. Временна́я метка — отклонение ≤ 5 с, или пакет из буфера ≤ 120 с
-3. HMAC-SHA256 по ключу маяка из БД (AES-256-GCM)
-4. Replay protection — `sequence` должен расти (Redis)
-5. Физические ограничения — расстояния 0.01–200 м, скорость ≤ 10 м/с
+- POST /api/auth/login
+- POST /api/auth/refresh
+- POST /api/auth/logout
+- GET /api/auth/me
+- POST /api/gps
+- GET /api/gps/current
+- GET /api/gps/history/{userId}
+- POST /api/detections
+- GET /api/detections/recent
+- GET /api/dashboard/config
+- SignalR hub: /hubs/positioning
 
-При успехе — трилатерация → фильтр Калмана → запись в PostgreSQL →
-`PositioningHub.Clients.All.SendAsync("PositionUpdate", ...)`.
+## Web dashboard
 
-### Сервер → Android КПК (SignalR)
+Корень сервера отдаёт встроенную страницу наблюдателя. Она умеет:
 
-Клиент подключается к `ws[s]://<host>:5001/hubs/positioning?access_token=<JWT>`.
-После подключения сервер рассылает событие `PositionUpdate` при каждом обновлении позиции.
+- авторизоваться как observer/admin;
+- получать текущие GPS-позиции;
+- показывать детекции свой/чужой;
+- запрашивать историю по выбранному пользователю.
 
-Структура события:
-```json
-{
-  "positions": [
-    {
-      "beaconId": 1, "beaconName": "Иванов",
-      "x": 15.2, "y": 22.7, "z": 1.5,
-      "confidence": 0.94, "method": "TWR",
-      "timestamp": "2026-03-26T10:15:00Z",
-      "anchorsUsed": 3
-    }
-  ]
-}
-```
+Текущий UI использует офлайн-дружественную координатную подложку без внешних CDN. Если в offline_deps/osm_tiles будут подготовлены локальные XYZ-тайлы, их можно подключить через Map:TileUrlTemplate.
 
-### Android КПК — аутентификация
+## Офлайн-установка
 
-```
-POST /api/auth/login   { "login": "observer", "password": "..." }
-  → { "token": "<JWT>", "refreshToken": "...", "role": "observer", "expiresAtUtc": "..." }
+Структура offline_deps описана в [offline_deps/README.md](offline_deps/README.md).
 
-POST /api/auth/refresh { "refreshToken": "..." }
-  → новая пара токенов (single-use rotation)
-
-POST /api/auth/logout   — JTI попадает в denylist Redis
-```
-
-JWT-токен прикладывается к каждому запросу:
-`Authorization: Bearer <token>`
-
----
-
-## Роли доступа
-
-| Роль       | Что может                                                  |
-|------------|------------------------------------------------------------|
-| `admin`    | Всё: управление якорями, маяками, ключами, чтение позиций  |
-| `observer` | Подключение к SignalR, чтение позиций (только GET)         |
-| `player`   | Отправка телеметрии (`POST /api/telemetry/measurement`)    |
-
-Учётные данные для каждой роли задаются через ENV-переменные (см. ниже).
-
----
-
-## Настройка и первый запуск
-
-### Шаг 1 — Установить зависимости
-
-- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
-- Redis (`sudo apt install redis-server` на Linux, или Docker)
-- PostgreSQL (Production) — для разработки достаточно SQLite
-
-### Шаг 2 — Настроить конфигурацию
-
-**Рекомендуется: tacid-manager** (интерактивная консоль с подсказками)
+### Linux
 
 ```bash
-# Запуск менеджера конфигурации
-dotnet run --project StrikeballServer/ServerManager/ServerManager.csproj
-
-# или на Linux с существующим env-файлом:
-sudo dotnet tacid-manager.dll --env-file /etc/strikeball/environment
+chmod +x setup.sh run.sh scripts/prepare_offline_deps.sh
+./setup.sh
+./run.sh
 ```
 
-Менеджер генерирует ключи через CSPRNG, проверяет корректность конфигурации
-и показывает предупреждения перед сохранением.
-
-**Вручную** — задать ENV-переменные (минимально необходимые):
-
-```bash
-# Ключи (генерируются один раз)
-export TACID_JWT_SIGNING_KEY=$(openssl rand -base64 48 | tr -d '=+/')
-export TACID_MASTER_KEY_B64=$(openssl rand -base64 32)
-
-# Учётные данные
-export TACID_ADMIN_LOGIN="admin"
-export TACID_ADMIN_PASSWORD=$(openssl rand -base64 18)
-export TACID_OBSERVER_LOGIN="observer"
-export TACID_OBSERVER_PASSWORD=$(openssl rand -base64 18)
-export TACID_PLAYER_LOGIN="player"
-export TACID_PLAYER_PASSWORD=$(openssl rand -base64 18)
-export TACID_PLAYER_BEACON_ID="1"
-
-# Инфраструктура
-export Redis__ConnectionString="localhost:6379,abortConnect=false"
-# Production: также задать ConnectionStrings__PostgreSQL
-```
-
-PowerShell (Windows):
+### Windows
 
 ```powershell
-$mk = New-Object byte[] 32
-[System.Security.Cryptography.RandomNumberGenerator]::Fill($mk)
-
-$env:TACID_JWT_SIGNING_KEY = -join ((48..57+65..90+97..122) | Get-Random -Count 64 | % {[char]$_})
-$env:TACID_MASTER_KEY_B64  = [Convert]::ToBase64String($mk)
-$env:TACID_ADMIN_LOGIN     = "admin"
-$env:TACID_ADMIN_PASSWORD  = [Convert]::ToBase64String([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(18))
-$env:TACID_OBSERVER_LOGIN  = "observer"
-$env:TACID_OBSERVER_PASSWORD = [Convert]::ToBase64String([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(18))
-$env:TACID_PLAYER_LOGIN    = "player"
-$env:TACID_PLAYER_PASSWORD = [Convert]::ToBase64String([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(18))
-$env:TACID_PLAYER_BEACON_ID = "1"
-$env:Redis__ConnectionString = "localhost:6379,abortConnect=false"
+.\setup.ps1
+.\run.ps1
 ```
 
-### Шаг 3 — Выбрать режим подключения
-
-| Режим | Когда использовать | TACID_ALLOW_INSECURE_HTTP | ASPNETCORE_URLS |
-|---|---|---|---|
-| LAN / WireGuard VPN | Полигон без интернета, одна сеть | `true` | `http://0.0.0.0:5001` |
-| Публичный IP (тест) | Клиент подключается напрямую | `true` | `http://0.0.0.0:5001` |
-| Production HTTPS | nginx + TLS, интернет | `false` | `http://127.0.0.1:5001` (*) |
-
-(*) При HTTPS-режиме nginx слушает 443 и проксирует на localhost:5001.
-
-### Шаг 4 — Запустить сервер
+### Подготовка кэша на онлайн-машине
 
 ```bash
-# LAN / VPN (PostgreSQL остаётся, TLS отключён)
-ASPNETCORE_ENVIRONMENT=Production \
-ASPNETCORE_URLS="http://0.0.0.0:5001" \
-TACID_ALLOW_INSECURE_HTTP=true \
-dotnet run --project StrikeballServer/Server/StrikeballServer.csproj
-
-# HTTPS (reverse proxy настроен)
-ASPNETCORE_ENVIRONMENT=Production \
-ASPNETCORE_URLS="http://127.0.0.1:5001" \
-dotnet run --project StrikeballServer/Server/StrikeballServer.csproj
-
-# Разработка (SQLite, Swagger UI на /)
-ASPNETCORE_ENVIRONMENT=Development \
-ASPNETCORE_URLS="http://localhost:5001" \
-TACID_ALLOW_INSECURE_HTTP=true \
-dotnet run --project StrikeballServer/Server/StrikeballServer.csproj
+./scripts/prepare_offline_deps.sh
 ```
 
-Сервер готов когда в логе появится:
-```
-Strikeball Positioning Server started [Production]
-SignalR Hub endpoint: /hubs/positioning
-HTTPS enforcement: disabled (LAN/VPN mode)
-```
-
----
-
-## Тестовый запуск
-
-### Проверка сервера (curl / браузер)
-
-```bash
-# Должен вернуть 401 (сервер работает, но токен не передан)
-curl -i http://localhost:5001/api/auth/me
-
-# Логин — получить токен
-curl -s -X POST http://localhost:5001/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d "{\"login\":\"$TACID_ADMIN_LOGIN\",\"password\":\"$TACID_ADMIN_PASSWORD\"}" | jq .
-
-# Запрос с токеном
-curl -H "Authorization: Bearer <token>" http://localhost:5001/api/auth/me
-```
-
-### Автоматический smoke-тест
-
-Проверяет: login, HMAC-телеметрию, SignalR negotiate, logout/denylist.
-
-```bash
-# Linux / macOS
-export TACID_TEST_LOGIN="$TACID_ADMIN_LOGIN"
-export TACID_TEST_PASSWORD="$TACID_ADMIN_PASSWORD"
-bash StrikeballServer/scripts/smoke-test.sh localhost:5001
-
-# Успех: последняя строка — "Smoke test PASSED"
-```
+или
 
 ```powershell
-# Windows PowerShell
-$env:TACID_TEST_LOGIN    = $env:TACID_ADMIN_LOGIN
-$env:TACID_TEST_PASSWORD = $env:TACID_ADMIN_PASSWORD
-.\StrikeballServer\scripts\smoke-test.ps1 -Server localhost:5001
+.\scripts\prepare_offline_deps.ps1
 ```
 
-### Симулятор маяков
+После этого вручную докладываются runtime-бинарники .NET 8, PostgreSQL, Redis и офлайн-тайлы карты.
 
-Отправляет HMAC-подписанные пакеты телеметрии от имени тестового маяка:
+## Пример локальной конфигурации
+
+См. [Server/appsettings.Local.json](Server/appsettings.Local.json).
+
+Ключевые настройки:
+
+- Security:AllowInsecureHttp=true
+- Security:SecretStoreDirectory=App_Data/keys
+- TelemetrySecurity:Limits:gps=10/s
+- TelemetrySecurity:Limits:detections=5/s
+- Map:TileUrlTemplate=/offline_deps/osm_tiles/{z}/{x}/{y}.png
+
+## Android клиент
+
+После логина приложение:
+
+1. сохраняет JWT, refresh token, userId и HMAC ключ;
+2. запускает foreground GPS service;
+3. AI camera при наличии локальных детекций отправляет их на /api/detections тем же подписанным контуром.
+
+## ServerManager
+
+ServerManager оставлен как локальный конфигуратор офлайн-режима: ключи, LAN HTTP режим, PostgreSQL/Redis и bootstrap-учётки для первого запуска. Основные пользователи после старта уже хранятся в БД сервера.
+
+## Сборка
+
+Сервер:
 
 ```bash
-# Запустить сервер (окно 1), затем симулятор (окно 2):
-dotnet run --project StrikeballServer/Tests/Tests.csproj
+dotnet build Server/StrikeballServer.csproj
+```
+
+Manager:
+
+```bash
+dotnet build ServerManager/ServerManager.csproj
 ```
 
 Симулятор создаёт маяк ID=1, движущийся по диагонали полигона,

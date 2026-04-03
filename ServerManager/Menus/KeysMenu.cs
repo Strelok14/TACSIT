@@ -18,8 +18,8 @@ internal static class KeysMenu
             Console.WriteLine();
 
             ConsoleUI.Info("JWT Key    — подписывает access-токены (HMAC-SHA256). Минимум 32 байта UTF-8.");
-            ConsoleUI.Info("Master Key — шифрует HMAC-ключи маяков (AES-256-GCM). Ровно 32 байта.");
-            ConsoleUI.Warning("Замена активного ключа делает все текущие токены и ключи маяков недействительными!");
+            ConsoleUI.Info("Master Key — шифрует пользовательские HMAC-ключи (AES-256-GCM). Ровно 32 байта.");
+            ConsoleUI.Warning("Замена активного ключа делает все текущие JWT и HMAC-ключи пользователей недействительными!");
             Console.WriteLine();
 
             ConsoleUI.Header("Действия");
@@ -27,7 +27,7 @@ internal static class KeysMenu
             ConsoleUI.MenuItem(2, "Задать JWT Signing Key вручную");
             ConsoleUI.MenuItem(3, "Сгенерировать новый Master Key        (авто, AES-256)");
             ConsoleUI.MenuItem(4, "Задать Master Key вручную             (Base64 32 байта)");
-            ConsoleUI.MenuItem(5, "Сгенерировать ключ маяка              (для прошивки / API)");
+            ConsoleUI.MenuItem(5, "Сгенерировать HMAC ключ клиента       (для Android / API)");
             ConsoleUI.MenuItem(0, "Назад");
 
             var choice = ConsoleUI.SelectOption("Выберите", 5);
@@ -158,11 +158,11 @@ internal static class KeysMenu
     {
         ConsoleUI.Clear();
         ConsoleUI.PrintBanner();
-        ConsoleUI.Header("Генерация ключа маяка (HMAC-SHA256)");
+        ConsoleUI.Header("Генерация HMAC ключа клиента (HMAC-SHA256)");
 
         var key = CryptoUtils.GenerateBeaconKey();
 
-        ConsoleUI.Success("Ключ маяка сгенерирован (32 байта, HMAC-SHA256 совместимый):");
+        ConsoleUI.Success("Ключ клиента сгенерирован (32 байта, HMAC-SHA256 совместимый):");
         Console.WriteLine();
 
         var prev = Console.ForegroundColor;
@@ -173,14 +173,12 @@ internal static class KeysMenu
 
         ConsoleUI.Info("Используйте этот ключ двумя способами:");
         Console.WriteLine();
-        ConsoleUI.Info("  1) Загрузить в БД через API (рекомендуется):");
-        ConsoleUI.Info("     POST /api/security/beacons/{id}/key");
-        ConsoleUI.Info("     Body: { \"keyBase64\": \"<ключ>\", \"keyVersion\": 1 }");
+        ConsoleUI.Info("  1) Загрузить в БД для пользователя (рекомендуется):");
+        ConsoleUI.Info("     Через IUserHmacKeyStore / админский API локального демо");
         ConsoleUI.Info("     Заголовок: Authorization: Bearer <admin-token>");
         Console.WriteLine();
-        ConsoleUI.Info("  2) ENV-переменная для отладки (fallback):");
-        ConsoleUI.Info($"     BEACON_KEY_{{id}}={key}");
-        ConsoleUI.Warning("Fallback через ENV — только для разработки! В Production используйте API.");
+        ConsoleUI.Info("  2) Сохранить как аварийную копию в офлайн-сейфе ключей.");
+        ConsoleUI.Warning("Для GPS ветки сервер сам генерирует и шифрует HMAC ключ при первом логине пользователя.");
         ConsoleUI.PressAnyKey();
     }
 }

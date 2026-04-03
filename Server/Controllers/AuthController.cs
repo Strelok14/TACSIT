@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
 using System;
@@ -17,24 +18,27 @@ namespace StrikeballServer.Controllers;
 [ApiController]
 [Route("auth")]
 [Route("api/auth")]
-[Authorize(Roles = "observer,player,admin")]
 public class AuthController : ControllerBase
 {
     private readonly IConfiguration _config;
     private readonly ILogger<AuthController> _logger;
     private readonly ApplicationDbContext _db;
     private readonly IJwtDenylistService _denylist;
+    private readonly IUserHmacKeyStore _userHmacKeyStore;
+    private readonly PasswordHasher<User> _passwordHasher = new();
 
     public AuthController(
         IConfiguration config,
         ILogger<AuthController> logger,
         ApplicationDbContext db,
-        IJwtDenylistService denylist)
+        IJwtDenylistService denylist,
+        IUserHmacKeyStore userHmacKeyStore)
     {
         _config = config;
         _logger = logger;
         _db = db;
         _denylist = denylist;
+        _userHmacKeyStore = userHmacKeyStore;
     }
 
     [HttpPost("login")]
@@ -46,17 +50,18 @@ public class AuthController : ControllerBase
             return BadRequest(new AuthResponseDto { Success = false, Message = "login/password required" });
         }
 
-        var user = ResolveUsers().FirstOrDefault(u =>
-            string.Equals(u.Login, request.Login, StringComparison.Ordinal));
-
-        if (user != null && !FixedTimeSecretEquals(user.Password, request.Password))
-        {
-            user = null;
-        }
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.Login == request.Login, cancellationToken);
 
         if (user == null)
         {
             _logger.LogWarning("Auth failed: invalid credentials");
+            return Unauthorized(new AuthResponseDto { Success = false, Message = "invalid credentials" });
+        }
+
+        var verifyResult = _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.Password);
+        if (verifyResult == PasswordVerificationResult.Failed)
+        {
+            _logger.LogWarning("Auth failed: invalid credentials for {login}", request.Login);
             return Unauthorized(new AuthResponseDto { Success = false, Message = "invalid credentials" });
         }
 
@@ -66,7 +71,10 @@ public class AuthController : ControllerBase
             return StatusCode(500, new AuthResponseDto { Success = false, Message = "Server auth config error" });
         }
 
-        var refreshToken = await IssueRefreshTokenAsync(user.Login, cancellationToken);
+        var refreshToken = await IssueRefreshTokenAsync(user.Id.ToString(), cancellationToken);
+        var hmacKey = await _userHmacKeyStore.EnsureKeyBase64Async(user.Id, cancellationToken);
+        user.LastLoginAtUtc = DateTime.UtcNow;
+        await _db.SaveChangesAsync(cancellationToken);
 
         return Ok(new AuthResponseDto
         {
@@ -74,6 +82,8 @@ public class AuthController : ControllerBase
             Token = accessToken,
             Message = "ok",
             Role = user.Role,
+            UserId = user.Id,
+            HmacKey = hmacKey,
             ExpiresAtUtc = expiresAt,
             RefreshToken = refreshToken.Token,
             RefreshExpiresAtUtc = refreshToken.ExpiryUtc
@@ -101,11 +111,15 @@ public class AuthController : ControllerBase
         stored.IsRevoked = true;
         await _db.SaveChangesAsync(cancellationToken);
 
-        var users = ResolveUsers();
-        var user = users.FirstOrDefault(u => string.Equals(u.Login, stored.UserId, StringComparison.Ordinal));
+        if (!int.TryParse(stored.UserId, out var userId))
+        {
+            return Unauthorized(new AuthResponseDto { Success = false, Message = "invalid refresh token owner" });
+        }
+
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
         if (user == null)
         {
-            _logger.LogWarning("Refresh: user {userId} not found in env configuration", stored.UserId);
+            _logger.LogWarning("Refresh: user {userId} not found in database", stored.UserId);
             return Unauthorized(new AuthResponseDto { Success = false, Message = "user not found" });
         }
 
@@ -115,7 +129,7 @@ public class AuthController : ControllerBase
             return StatusCode(500, new AuthResponseDto { Success = false, Message = "Server auth config error" });
         }
 
-        var newRefresh = await IssueRefreshTokenAsync(user.Login, cancellationToken);
+        var newRefresh = await IssueRefreshTokenAsync(user.Id.ToString(), cancellationToken);
 
         return Ok(new AuthResponseDto
         {
@@ -123,6 +137,8 @@ public class AuthController : ControllerBase
             Token = accessToken,
             Message = "ok",
             Role = user.Role,
+            UserId = user.Id,
+            HmacKey = await _userHmacKeyStore.EnsureKeyBase64Async(user.Id, cancellationToken),
             ExpiresAtUtc = expiresAt,
             RefreshToken = newRefresh.Token,
             RefreshExpiresAtUtc = newRefresh.ExpiryUtc
@@ -130,6 +146,7 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("logout")]
+    [Authorize(Roles = "observer,player,admin")]
     public async Task<IActionResult> Logout([FromBody] LogoutRequestDto? request, CancellationToken cancellationToken)
     {
         // Put current access token JTI to denylist.
@@ -165,19 +182,21 @@ public class AuthController : ControllerBase
     }
 
     [HttpGet("me")]
+    [Authorize(Roles = "observer,player,admin")]
     public IActionResult Me()
     {
         return Ok(new
         {
+            userId = User.Claims.FirstOrDefault(c => c.Type == "user_id")?.Value,
             name = User.Identity?.Name,
             role = User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Role)?.Value,
-            beaconId = User.Claims.FirstOrDefault(c => c.Type == "beacon_id")?.Value
+            login = User.Identity?.Name
         });
     }
 
     // Private helpers
 
-    private (string? token, string jti, DateTime expiresAt) GenerateAccessToken(AuthUser user)
+    private (string? token, string jti, DateTime expiresAt) GenerateAccessToken(User user)
     {
         var signingKey = _config["Jwt:SigningKey"]
             ?? Environment.GetEnvironmentVariable("TACID_JWT_SIGNING_KEY");
@@ -198,14 +217,12 @@ public class AuthController : ControllerBase
         {
             new(JwtRegisteredClaimNames.Sub, user.Login),
             new(JwtRegisteredClaimNames.Jti, jti),
+            new(JwtRegisteredClaimNames.NameId, user.Id.ToString()),
             new(ClaimTypes.Name, user.Login),
+            new(ClaimTypes.NameIdentifier, user.Id.ToString()),
+            new("user_id", user.Id.ToString()),
             new(ClaimTypes.Role, user.Role)
         };
-
-        if (user.BeaconId.HasValue)
-        {
-            claims.Add(new Claim("beacon_id", user.BeaconId.Value.ToString()));
-        }
 
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKey));
         var jwt = new JwtSecurityToken(
@@ -238,42 +255,4 @@ public class AuthController : ControllerBase
         await _db.SaveChangesAsync(cancellationToken);
         return rt;
     }
-
-    private IEnumerable<AuthUser> ResolveUsers()
-    {
-        var users = new List<AuthUser>();
-        AddIfPresent(users, "TACID_ADMIN_LOGIN", "TACID_ADMIN_PASSWORD", "admin", null);
-        AddIfPresent(users, "TACID_OBSERVER_LOGIN", "TACID_OBSERVER_PASSWORD", "observer", null);
-
-        var playerBeacon = Environment.GetEnvironmentVariable("TACID_PLAYER_BEACON_ID");
-        int? playerBeaconId = int.TryParse(playerBeacon, out var bId) ? bId : null;
-        AddIfPresent(users, "TACID_PLAYER_LOGIN", "TACID_PLAYER_PASSWORD", "player", playerBeaconId);
-
-        return users;
-    }
-
-    private static void AddIfPresent(List<AuthUser> users, string loginEnv, string passEnv, string role, int? beaconId)
-    {
-        var login = Environment.GetEnvironmentVariable(loginEnv);
-        var pass = Environment.GetEnvironmentVariable(passEnv);
-        if (!string.IsNullOrWhiteSpace(login) && !string.IsNullOrWhiteSpace(pass))
-        {
-            users.Add(new AuthUser(login, pass, role, beaconId));
-        }
-    }
-
-    private static bool FixedTimeSecretEquals(string expected, string provided)
-    {
-        if (expected == null || provided == null)
-        {
-            return false;
-        }
-
-        // Compare SHA-256 digests in fixed time to reduce timing side channels.
-        var expectedHash = SHA256.HashData(Encoding.UTF8.GetBytes(expected));
-        var providedHash = SHA256.HashData(Encoding.UTF8.GetBytes(provided));
-        return CryptographicOperations.FixedTimeEquals(expectedHash, providedHash);
-    }
-
-    private sealed record AuthUser(string Login, string Password, string Role, int? BeaconId);
 }

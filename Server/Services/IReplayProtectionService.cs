@@ -6,4 +6,6 @@ namespace StrikeballServer.Services;
 public interface IReplayProtectionService
 {
     Task<bool> AcceptPacketAsync(int beaconId, long sequence, long timestampMs, CancellationToken cancellationToken = default);
+
+    Task<bool> AcceptPacketAsync(int subjectId, string channel, long sequence, long timestampMs, CancellationToken cancellationToken = default);
 }

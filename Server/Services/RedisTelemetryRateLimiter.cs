@@ -64,31 +64,35 @@ return allowed";
 
     public async Task<bool> IsAllowedAsync(int beaconId, string sourceIp, CancellationToken cancellationToken = default)
     {
+        return await IsAllowedAsync(beaconId, "telemetry", sourceIp, 20, 15, cancellationToken);
+    }
+
+    public async Task<bool> IsAllowedAsync(int subjectId, string channel, string sourceIp, int capacity, double refillPerSecond, CancellationToken cancellationToken = default)
+    {
         var redis = _redis.Value;
         if (redis != null && redis.IsConnected)
         {
             try
             {
-                var key = $"tacid:rl:{beaconId}:{sourceIp}";
+                var key = $"tacid:rl:{channel}:{subjectId}:{sourceIp}";
                 var db = redis.GetDatabase();
                 var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
-                // 20 токенов в бакете, восстановление ~15 токенов/сек.
+                var refillPerMillisecond = refillPerSecond / 1000d;
                 var allowed = (int)await db.ScriptEvaluateAsync(
                     LuaScript,
                     new RedisKey[] { key },
-                    new RedisValue[] { nowMs, 0.015, 20, 1 });
+                    new RedisValue[] { nowMs, refillPerMillisecond, capacity, 1 });
 
                 return allowed == 1;
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Redis недоступен при rate limiting, включаем fallback для beacon {beaconId}", beaconId);
+                _logger.LogWarning(ex, "Redis недоступен при rate limiting, включаем fallback для subject {subjectId}", subjectId);
             }
         }
 
-        // Graceful degradation fallback: до 20 запросов/сек.
-        var bucketKey = $"{beaconId}:{sourceIp}";
+        var bucketKey = $"{subjectId}:{channel}:{sourceIp}";
         var queue = _fallbackWindows.GetOrAdd(bucketKey, _ => new ConcurrentQueue<DateTime>());
         var now = DateTime.UtcNow;
         var border = now.AddSeconds(-1);
@@ -98,7 +102,7 @@ return allowed";
             queue.TryDequeue(out _);
         }
 
-        if (queue.Count >= 20)
+        if (queue.Count >= capacity)
         {
             return false;
         }

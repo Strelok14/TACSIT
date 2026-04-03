@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>T.A.C.I.D. GPS Local Demo</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+    <main class="layout">
+        <section class="panel auth-panel">
+            <h1>T.A.C.I.D. GPS Local Demo</h1>
+            <p>Локальная панель наблюдения за GPS-позициями и детекциями.</p>
+            <label>
+                Сервер
+                <input id="serverUrl" value="http://192.168.1.100:5000" />
+            </label>
+            <label>
+                Логин
+                <input id="login" value="observer" />
+            </label>
+            <label>
+                Пароль
+                <input id="password" type="password" value="ObserverDemo123!" />
+            </label>
+            <button id="loginButton">Войти</button>
+            <div id="authStatus" class="status"></div>
+        </section>
+
+        <section class="panel map-panel">
+            <div class="toolbar">
+                <button id="refreshButton">Обновить</button>
+                <select id="historyUser"></select>
+            </div>
+            <div id="mapCanvas" class="map-canvas"></div>
+            <div class="legend">
+                <span><i class="dot position"></i> Текущие позиции</span>
+                <span><i class="dot ally"></i> Свой</span>
+                <span><i class="dot enemy"></i> Чужой</span>
+            </div>
+        </section>
+
+        <section class="panel data-panel">
+            <h2>История и детекции</h2>
+            <pre id="historyOutput">История ещё не загружена.</pre>
+            <pre id="detectionsOutput">Детекции ещё не загружены.</pre>
+        </section>
+    </main>
+
+    <script src="/app.js"></script>
+</body>
+</html>

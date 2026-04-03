@@ -17,12 +17,17 @@ public final class SessionManager {
     private static final String KEY_REFRESH_TOKEN = "refresh_token";
     private static final String KEY_ROLE = "user_role";
     private static final String KEY_SERVER_URL = "server_url";
+    private static final String KEY_USER_ID = "user_id";
+    private static final String KEY_HMAC_KEY = "hmac_key";
+    private static final String KEY_PACKET_SEQUENCE = "packet_sequence";
 
     private static SharedPreferences encryptedPreferences;
     private static volatile String accessToken;
     private static volatile String refreshToken;
     private static volatile String role;
     private static volatile String serverUrl;
+    private static volatile Integer userId;
+    private static volatile String hmacKey;
 
     private SessionManager() {
     }
@@ -53,6 +58,9 @@ public final class SessionManager {
             refreshToken = encryptedPreferences.getString(KEY_REFRESH_TOKEN, null);
             role = encryptedPreferences.getString(KEY_ROLE, null);
             serverUrl = encryptedPreferences.getString(KEY_SERVER_URL, null);
+            String storedUserId = encryptedPreferences.getString(KEY_USER_ID, null);
+            userId = storedUserId == null ? null : Integer.parseInt(storedUserId);
+            hmacKey = encryptedPreferences.getString(KEY_HMAC_KEY, null);
 
             Log.d(TAG, "SessionManager инициализирован");
         } catch (Exception e) {
@@ -64,12 +72,18 @@ public final class SessionManager {
      * Сохранить сессию (токены, роль, URL сервера)
      */
     public static void setSession(String token, String refresh, String userRole, String url) {
+        setSession(token, refresh, userRole, url, null, null);
+    }
+
+    public static void setSession(String token, String refresh, String userRole, String url, Integer resolvedUserId, String resolvedHmacKey) {
         if (encryptedPreferences == null) {
             Log.w(TAG, "SessionManager не инициализирован! Использую in-memory storage.");
             accessToken = token;
             refreshToken = refresh;
             role = userRole;
             serverUrl = url;
+            userId = resolvedUserId;
+            hmacKey = resolvedHmacKey;
             return;
         }
 
@@ -79,12 +93,16 @@ public final class SessionManager {
             editor.putString(KEY_REFRESH_TOKEN, refresh);
             editor.putString(KEY_ROLE, userRole);
             editor.putString(KEY_SERVER_URL, url);
+            editor.putString(KEY_USER_ID, resolvedUserId == null ? null : String.valueOf(resolvedUserId));
+            editor.putString(KEY_HMAC_KEY, resolvedHmacKey);
             editor.apply();
 
             accessToken = token;
             refreshToken = refresh;
             role = userRole;
             serverUrl = url;
+            userId = resolvedUserId;
+            hmacKey = resolvedHmacKey;
 
             Log.d(TAG, "Сессия сохранена (роль: " + userRole + ")");
         } catch (Exception e) {
@@ -96,7 +114,7 @@ public final class SessionManager {
      * Альтернативный метод для совместимости (без URL)
      */
     public static void setSession(String token, String refresh, String userRole) {
-        setSession(token, refresh, userRole, serverUrl);
+        setSession(token, refresh, userRole, serverUrl, userId, hmacKey);
     }
 
     public static String getAccessToken() {
@@ -113,6 +131,23 @@ public final class SessionManager {
 
     public static String getServerUrl() {
         return serverUrl;
+    }
+
+    public static Integer getUserId() {
+        return userId;
+    }
+
+    public static String getHmacKey() {
+        return hmacKey;
+    }
+
+    public static long nextPacketSequence() {
+        long next = 1L;
+        if (encryptedPreferences != null) {
+            next = encryptedPreferences.getLong(KEY_PACKET_SEQUENCE, 0L) + 1L;
+            encryptedPreferences.edit().putLong(KEY_PACKET_SEQUENCE, next).apply();
+        }
+        return next;
     }
 
     public static boolean isAuthenticated() {
@@ -137,12 +172,17 @@ public final class SessionManager {
             editor.remove(KEY_REFRESH_TOKEN);
             editor.remove(KEY_ROLE);
             editor.remove(KEY_SERVER_URL);
+            editor.remove(KEY_USER_ID);
+            editor.remove(KEY_HMAC_KEY);
+            editor.remove(KEY_PACKET_SEQUENCE);
             editor.apply();
 
             accessToken = null;
             refreshToken = null;
             role = null;
             serverUrl = null;
+            userId = null;
+            hmacKey = null;
 
             Log.d(TAG, "Сессия очищена");
         } catch (Exception e) {
