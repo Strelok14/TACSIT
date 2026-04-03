@@ -17,8 +17,10 @@
 - `nuget/` (кэш пакетов)
 - `postgres/win-x64/pgsql/bin/initdb.exe`
 - `postgres/win-x64/pgsql/bin/pg_ctl.exe`
+- `postgres/linux-x64/bin/initdb`
+- `postgres/linux-x64/bin/pg_ctl`
 - `redis/win-x64/redis-server.exe`
-- `redis/linux-x64-source/` (если нет готовых Linux binaries)
+- `redis/linux-x64-source/`
 - `osm_tiles/` (опционально, офлайн-карта)
 
 ## 2. Что копировать на флешку
@@ -33,6 +35,8 @@
 - `README.md`, `Docs/GPS_LOCAL_OFFLINE_QUICKSTART.md`
 
 Не требуется интернет на целевой машине.
+
+Чтобы уменьшить размер комплекта, папки `offline_deps/*/archives/` на флешку копировать не нужно: для запуска используются уже распакованные `win-x64`, `linux-x64`, `linux-x64-source` и `nuget`.
 
 ## 3. Развёртывание на Windows (офлайн)
 
@@ -49,30 +53,16 @@
 ## 4. Развёртывание на Linux (офлайн)
 
 1. Скопировать проект, например в `/opt/tacid/StrikeballServer`.
-2. Установить PostgreSQL (требуется один раз):
-
-   **Вариант A — если есть доступ к интернету или локальному зеркалу:**
-   ```bash
-   apt install -y postgresql-16
-   ```
-
-   **Вариант B — полный офлайн (скачать .deb на Windows, перенести флешкой):**
-   ```bash
-   # На Windows — скачать пакеты (открыть в браузере):
-   # https://apt.postgresql.org/pub/repos/apt/pool/main/p/postgresql-16/
-   # Нужны: postgresql-16_16.x_amd64.deb, postgresql-client-16, libpq5, postgresql-common
-   # Скопировать .deb-файлы на Linux, затем:
-   dpkg -i *.deb
-   ```
-
+2. Убедиться, что в `offline_deps/postgres/linux-x64` уже есть portable PostgreSQL binaries,
+   а в `offline_deps/redis/linux-x64-source` лежат исходники Redis.
 3. Выполнить:
    ```bash
    cd /opt/tacid/StrikeballServer
    chmod +x setup.sh run.sh
    ./setup.sh
    ```
-   > Redis компилируется из исходников автоматически (нужны `gcc` и `make` — есть по умолчанию).  
-   > Если `gcc`/`make` нет: `apt install -y build-essential`
+   > PostgreSQL стартует из `offline_deps/postgres/linux-x64` без отдельной установки в систему.  
+   > Redis компилируется из исходников автоматически. Если на машине нет `gcc` и `make`, поставьте `build-essential`.
 
 4. Запустить сервер:
    ```bash

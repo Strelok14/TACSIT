@@ -149,6 +149,8 @@ chmod +x setup.sh run.sh
 ./run.sh
 ```
 
+Для Linux PostgreSQL уже входит в `offline_deps/postgres/linux-x64`. Дополнительно ставить PostgreSQL в систему не требуется. Redis собирается из `offline_deps/redis/linux-x64-source` при первом `./setup.sh`.
+
 ## Что проверить после старта
 
 1. API доступен:

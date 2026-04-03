@@ -11,8 +11,11 @@
    - `powershell -ExecutionPolicy Bypass -File .\scripts\prepare_offline_deps.ps1`
 4. Проверить наличие:
    - `offline_deps/dotnet/win-x64/dotnet.exe`
+   - `offline_deps/dotnet/linux-x64/dotnet`
    - `offline_deps/postgres/win-x64/pgsql/bin/initdb.exe`
+   - `offline_deps/postgres/linux-x64/bin/pg_ctl`
    - `offline_deps/redis/win-x64/redis-server.exe`
+   - `offline_deps/redis/linux-x64-source/`
    - `offline_deps/nuget/`
 
 ## B. Что копировать на флешку
@@ -25,6 +28,8 @@
    - `scripts/`
    - `setup.ps1`, `setup.sh`, `run.ps1`, `run.sh`
    - `README.md`, `Docs/GPS_LOCAL_OFFLINE_QUICKSTART.md`, `Docs/GPS_FIELD_CHECKLIST.md`
+
+Для уменьшения размера флешки не брать `offline_deps/*/archives/`: в работу идут только уже распакованные каталоги.
 
 ## C. Развёртывание на целевой машине
 
@@ -40,6 +45,8 @@
 2. `chmod +x setup.sh run.sh`
 3. `./setup.sh`
 4. `./run.sh`
+
+Примечание: `setup.sh` стартует bundled PostgreSQL из `offline_deps/postgres/linux-x64` и собирает Redis из исходников. Если на Linux нет `gcc` и `make`, нужно установить `build-essential`.
 
 ## D. Быстрая проверка
 

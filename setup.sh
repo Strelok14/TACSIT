@@ -5,7 +5,6 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OFFLINE_DIR="$ROOT_DIR/offline_deps"
 DOTNET_LINUX_DIR="$OFFLINE_DIR/dotnet/linux-x64"
 POSTGRES_LINUX_DIR="$OFFLINE_DIR/postgres/linux-x64"
-POSTGRES_LINUX_SOURCE_DIR="$OFFLINE_DIR/postgres/linux-x64-source"
 REDIS_LINUX_SOURCE_DIR="$OFFLINE_DIR/redis/linux-x64-source"
 SERVER_DIR="$ROOT_DIR/Server"
 ENV_FILE="${TACID_ENV_FILE:-$ROOT_DIR/server.local.env}"
@@ -76,11 +75,12 @@ fi
 nohup "$REDIS_BIN" --port 6379 --save "" --appendonly no > "$ROOT_DIR/App_Data/logs/redis.log" 2>&1 &
 echo "Redis started (pid $!)"
 
-# --- PostgreSQL: prebuilt binaries or system-installed ---
+# --- PostgreSQL: prefer bundled portable binaries, allow system fallback ---
 PG_CTL=""
 if [[ -x "$POSTGRES_LINUX_DIR/bin/pg_ctl" ]]; then
   PG_CTL="$POSTGRES_LINUX_DIR/bin/pg_ctl"
   PG_INITDB="$POSTGRES_LINUX_DIR/bin/initdb"
+  export LD_LIBRARY_PATH="$POSTGRES_LINUX_DIR/lib:${LD_LIBRARY_PATH:-}"
 elif command -v pg_ctlcluster &>/dev/null; then
   echo "Using system PostgreSQL (pg_ctlcluster). Skipping initdb — manage via systemd."
   PG_CTL=""
@@ -89,17 +89,9 @@ elif command -v pg_ctl &>/dev/null; then
   PG_INITDB="$(command -v initdb)"
 else
   echo "ERROR: PostgreSQL binaries not found." >&2
-  echo "" >&2
-  echo "  Option A (recommended, needs any internet/mirror):" >&2
-  echo "    apt install -y postgresql-16" >&2
-  echo "" >&2
-  echo "  Option B (full offline, download .deb on Windows):" >&2
-  echo "    1. On Windows, open https://apt.postgresql.org in a browser." >&2
-  echo "    2. Download postgresql-16, libpq5, and dependencies into a folder." >&2
-  echo "    3. Copy folder to this machine." >&2
-  echo "    4. dpkg -i *.deb" >&2
-  echo "" >&2
-  echo "  Then re-run: ./setup.sh" >&2
+  echo "  Expected bundled path: $POSTGRES_LINUX_DIR/bin/pg_ctl" >&2
+  echo "  Re-run scripts/download_offline_deps.ps1 on an online Windows machine" >&2
+  echo "  or install PostgreSQL locally and re-run ./setup.sh." >&2
   exit 1
 fi
 
