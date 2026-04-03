@@ -2,21 +2,23 @@
 
 Короткий чеклист для развёртывания и запуска на полигоне без интернета.
 
-## A. Подготовка на онлайн-машине
+## A. Что уже должно быть готово до выезда
 
-1. Обновить репозиторий и перейти в `StrikeballServer`.
-2. Скачать офлайн-зависимости:
-   - `powershell -ExecutionPolicy Bypass -File .\scripts\download_offline_deps.ps1`
-3. Подготовить NuGet-кэш:
-   - `powershell -ExecutionPolicy Bypass -File .\scripts\prepare_offline_deps.ps1`
-4. Проверить наличие:
-   - `offline_deps/dotnet/win-x64/dotnet.exe`
-   - `offline_deps/dotnet/linux-x64/dotnet`
-   - `offline_deps/postgres/win-x64/pgsql/bin/initdb.exe`
-   - `offline_deps/postgres/linux-x64/bin/pg_ctl`
-   - `offline_deps/redis/win-x64/redis-server.exe`
-   - `offline_deps/redis/linux-x64-source/`
-   - `offline_deps/nuget/`
+Если комплект уже собран на онлайн-машине, этот раздел повторно выполнять не нужно. Достаточно убедиться, что в папке `offline_deps` уже есть:
+
+1. `offline_deps/dotnet/win-x64/dotnet.exe`
+2. `offline_deps/dotnet/linux-x64/dotnet`
+3. `offline_deps/postgres/win-x64/pgsql/bin/initdb.exe`
+4. `offline_deps/postgres/linux-x64/bin/pg_ctl`
+5. `offline_deps/redis/win-x64/redis-server.exe`
+6. `offline_deps/redis/linux-x64-source/`
+7. `offline_deps/nuget/`
+
+Если комплект нужно собрать заново, тогда выполнить:
+
+1. Перейти в `StrikeballServer`.
+2. Запустить `powershell -ExecutionPolicy Bypass -File .\scripts\download_offline_deps.ps1`.
+3. Запустить `powershell -ExecutionPolicy Bypass -File .\scripts\prepare_offline_deps.ps1`.
 
 ## B. Что копировать на флешку
 
