@@ -8,8 +8,8 @@ $downloads = @(
     @{ Name = 'dotnet-runtime-linux-x64.tar.gz'; Url = 'https://dotnetcli.azureedge.net/dotnet/Runtime/8.0.15/dotnet-runtime-8.0.15-linux-x64.tar.gz'; Target = (Join-Path $OfflineDir 'dotnet\archives\dotnet-runtime-8.0.15-linux-x64.tar.gz') },
     @{ Name = 'aspnetcore-runtime-linux-x64.tar.gz'; Url = 'https://dotnetcli.azureedge.net/dotnet/aspnetcore/Runtime/8.0.15/aspnetcore-runtime-8.0.15-linux-x64.tar.gz'; Target = (Join-Path $OfflineDir 'dotnet\archives\aspnetcore-runtime-8.0.15-linux-x64.tar.gz') },
     @{ Name = 'postgres-win-x64-binaries.zip'; Url = 'https://get.enterprisedb.com/postgresql/postgresql-16.4-1-windows-x64-binaries.zip'; Target = (Join-Path $OfflineDir 'postgres\archives\postgresql-16.4-1-windows-x64-binaries.zip') },
-    @{ Name = 'postgres-linux-x64-binaries.tar.gz'; Url = 'https://get.enterprisedb.com/postgresql/postgresql-16.4-1-linux-x64-binaries.tar.gz'; Target = (Join-Path $OfflineDir 'postgres\archives\postgresql-16.4-1-linux-x64-binaries.tar.gz') },
-    @{ Name = 'postgres-linux-source.tar.gz'; Url = 'https://ftp.postgresql.org/pub/source/v16.4/postgresql-16.4.tar.gz'; Target = (Join-Path $OfflineDir 'postgres\archives\postgresql-16.4-source.tar.gz') },
+    # EDB direct binaries return 403 — use embedded-postgres-binaries (portable, bundled libs, from Maven Central)
+    @{ Name = 'postgres-linux-x64-embedded.jar'; Url = 'https://repo1.maven.org/maven2/io/zonky/test/postgres/embedded-postgres-binaries-linux-amd64/16.4.0/embedded-postgres-binaries-linux-amd64-16.4.0.jar'; Target = (Join-Path $OfflineDir 'postgres\archives\embedded-postgres-binaries-linux-amd64-16.4.0.jar') },
     @{ Name = 'redis-win-x64.zip'; Url = 'https://github.com/tporadowski/redis/releases/download/v5.0.14.1/Redis-x64-5.0.14.1.zip'; Target = (Join-Path $OfflineDir 'redis\archives\Redis-x64-5.0.14.1.zip') },
     @{ Name = 'redis-linux-source.tar.gz'; Url = 'https://download.redis.io/releases/redis-7.2.5.tar.gz'; Target = (Join-Path $OfflineDir 'redis\archives\redis-7.2.5.tar.gz') }
 )
@@ -95,15 +95,33 @@ if (Test-Path $stackBuilderPath) {
 }
 
 $postgresLinuxArchive = Join-Path $OfflineDir 'postgres\archives\postgresql-16.4-1-linux-x64-binaries.tar.gz'
-$postgresLinuxDir = Join-Path $OfflineDir 'postgres\linux-x64'
-if (Test-Path $postgresLinuxArchive) {
-    Expand-IfExists -Archive $postgresLinuxArchive -Destination $postgresLinuxDir
-}
-
-$postgresLinuxSourceArchive = Join-Path $OfflineDir 'postgres\archives\postgresql-16.4-source.tar.gz'
-$postgresLinuxSourceDir = Join-Path $OfflineDir 'postgres\linux-x64-source'
-if (Test-Path $postgresLinuxSourceArchive) {
-    Expand-IfExists -Archive $postgresLinuxSourceArchive -Destination $postgresLinuxSourceDir
+# --- Extract embedded-postgres-binaries JAR for Linux ---
+# JAR is a ZIP containing postgres-linux-x86_64.txz (tar+xz). Needs Python to unpack xz.
+$pgLinuxJar = Join-Path $OfflineDir 'postgres\archives\embedded-postgres-binaries-linux-amd64-16.4.0.jar'
+$pgLinuxDir = Join-Path $OfflineDir 'postgres\linux-x64'
+if ((Test-Path $pgLinuxJar) -and -not (Test-Path (Join-Path $pgLinuxDir 'bin\pg_ctl'))) {
+    Write-Host 'Extracting embedded PostgreSQL Linux binaries...'
+    $pgJarExtract = Join-Path $OfflineDir 'postgres\archives\pg-jar-extracted'
+    New-Item -ItemType Directory -Force -Path $pgJarExtract, $pgLinuxDir | Out-Null
+    # Step 1: unzip JAR (it is a ZIP)
+    $pgJarZip = $pgLinuxJar -replace '\.jar$', '.zip-tmp'
+    Copy-Item $pgLinuxJar $pgJarZip
+    Expand-Archive -Path $pgJarZip -DestinationPath $pgJarExtract -Force
+    Remove-Item $pgJarZip -Force
+    # Step 2: extract .txz via Python (built-in lzma/tarfile)
+    $txz = Get-ChildItem $pgJarExtract -Filter '*.txz' | Select-Object -First 1
+    if ($txz) {
+        $py = @"
+import tarfile, os, sys
+src = sys.argv[1]; dst = sys.argv[2]
+os.makedirs(dst, exist_ok=True)
+with tarfile.open(src, 'r:xz') as t: t.extractall(dst)
+print('PostgreSQL Linux binaries extracted to', dst)
+"@
+        python -c $py $txz.FullName $pgLinuxDir
+    } else {
+        Write-Warning 'Could not find .txz inside embedded-postgres JAR.'
+    }
 }
 
 $redisWinArchive = Join-Path $OfflineDir 'redis\archives\Redis-x64-5.0.14.1.zip'
