@@ -7,6 +7,9 @@
 - Простой web dashboard на встроенном статическом фронтенде.
 - Полностью офлайн-установимый набор через offline_deps, setup.sh и setup.ps1.
 
+Краткая пошаговая инструкция по офлайн-развёртыванию для этой ветки:
+[Docs/GPS_LOCAL_OFFLINE_QUICKSTART.md](Docs/GPS_LOCAL_OFFLINE_QUICKSTART.md)
+
 ## Что изменено в этой ветке
 
 - Добавлены сущности Users, GpsPositions и DetectedPersons.
@@ -126,161 +129,42 @@ Manager:
 dotnet build ServerManager/ServerManager.csproj
 ```
 
-Симулятор создаёт маяк ID=1, движущийся по диагонали полигона,
-и отправляет 20 пакетов каждые 100 мс. В логах сервера появятся строки
-`PositionUpdate` с координатами.
+## Быстрая проверка после запуска
 
-### Тест с Android телефона
+1. Проверить API без токена:
+  - `GET http://<server-ip>:5001/api/auth/me` → `401`.
+2. Залогиниться observer/admin через `POST /api/auth/login`.
+3. Открыть встроенный web UI:
+  - `http://<server-ip>:5001/`
+4. Проверить поступление данных:
+  - `GET /api/gps/current`
+  - `GET /api/detections/recent`
 
-1. Убедитесь что телефон и сервер в одной сети (Wi-Fi/VPN).
-2. Запустить сервер с `TACID_ALLOW_INSECURE_HTTP=true` (LAN-профиль).
-3. Узнать IP сервера:
-   ```bash
-   ip addr show | grep "inet " | grep -v 127
-   # Windows: ipconfig | findstr "IPv4"
-   ```
-4. В приложении ввести адрес: `192.168.x.x` (без http:// — клиент подставит сам).
-   - IP-адрес → клиент использует `http://`
-   - Домен (.example.com) → клиент использует `https://`
-5. Войти с логином `observer` / `player`.
-6. Проверить: карта открылась, маяки отображаются.
+## Актуальные API для GPS-ветки
 
-Если браузер с телефона открывает `http://<IP>:5001/api/auth/me` и возвращает `401` —
-сервер доступен, можно подключать приложение.
+### Auth
 
----
+- `POST /api/auth/login`
+- `POST /api/auth/refresh`
+- `POST /api/auth/logout`
+- `GET /api/auth/me`
 
-## API — краткий справочник
+### GPS и история
 
-Порт по умолчанию: **5001**. В Development Swagger UI доступен на `/`.
+- `POST /api/gps`
+- `GET /api/gps/current`
+- `GET /api/gps/history/{userId}`
 
-### Аутентификация
+### Detections
 
-| Метод | Путь | Роль | Описание |
-|---|---|---|---|
-| POST | `/api/auth/login` | — | Получить access + refresh токен |
-| POST | `/api/auth/refresh` | — | Обновить токен (single-use) |
-| POST | `/api/auth/logout` | любая | Отозвать токен (Redis denylist) |
-| GET  | `/api/auth/me` | любая | Информация о текущем пользователе |
+- `POST /api/detections`
+- `GET /api/detections/recent`
 
-### Телеметрия и позиции
+### Real-time
 
-| Метод | Путь | Роль | Описание |
-|---|---|---|---|
-| POST | `/api/telemetry/measurement` | player | Пакет измерений маяка (с HMAC) |
-| GET  | `/api/positions` | observer | Текущие позиции всех маяков |
-| GET  | `/api/positions/{beaconId}` | observer | Позиция конкретного маяка |
-| GET  | `/api/positions/history/{beaconId}` | observer | История позиций |
+- `GET/WS /hubs/positioning`
 
-### Якоря и маяки (только admin)
+## Документация
 
-| Метод | Путь | Описание |
-|---|---|---|
-| GET/POST | `/api/anchors` | Список / добавить якорь |
-| PUT/DELETE | `/api/anchors/{id}` | Обновить / удалить якорь |
-| GET/POST | `/api/beacons` | Список / зарегистрировать маяк |
-| PUT/DELETE | `/api/beacons/{id}` | Обновить / удалить маяк |
-
-### Управление ключами маяков (только admin)
-
-| Метод | Путь | Описание |
-|---|---|---|
-| POST | `/api/security/beacons/{id}/key` | Загрузить HMAC-ключ маяка |
-| POST | `/api/security/beacons/{id}/rotate` | Ротировать ключ (grace period) |
-
-Пример загрузки ключа:
-```bash
-# Сгенерировать ключ маяка:
-KEY=$(openssl rand -base64 32)
-
-# Загрузить в БД:
-curl -X POST http://localhost:5001/api/security/beacons/1/key \
-  -H "Authorization: Bearer <admin-token>" \
-  -H "Content-Type: application/json" \
-  -d "{\"keyBase64\":\"$KEY\",\"keyVersion\":1}"
-```
-
-### SignalR Hub
-
-```
-Подключение: ws[s]://<host>:5001/hubs/positioning?access_token=<JWT>
-Роли:        observer, player, admin
-События:     PositionUpdate  →  AllPositionsDto  (список всех позиций)
-```
-
----
-
-## Production-развёртывание
-
-Готовые скрипты в `scripts/`:
-
-| Скрипт | Назначение |
-|---|---|
-| `deploy.sh` / `scripts/deploy_to_server.sh` | Сборка + копирование на сервер |
-| `scripts/setup_tls_nginx.sh` | Установка nginx + Let's Encrypt |
-| `scripts/smoke-test.sh` | Проверка после деплоя |
-| `strikeball-server.service` | systemd unit для автозапуска |
-
-ENV-секреты на Linux хранятся в `/etc/strikeball/environment`
-(права `640`, владелец `root:strikeball`).
-
-Детали безопасности, ротации ключей, JWT denylist и RBAC — см. [Docs/SECURITY.md](Docs/SECURITY.md).
-
-Пример запроса для отправки измерения:
-
-```bash
-curl -X POST http://localhost:5000/api/telemetry/measurement \
-  -H "Content-Type: application/json" \
-  -d '{
-    "beaconId": 1,
-    "distances": [
-      {"anchorId": 1, "distance": 5.2},
-      {"anchorId": 2, "distance": 7.3},
-      {"anchorId": 3, "distance": 4.8},
-      {"anchorId": 4, "distance": 6.1}
-    ],
-    "timestamp": 1709048400000,
-    "batteryLevel": 85
-  }'
-```
-
-## 📚 Дополнительная документация
-
-Полная документация проекта находится в `Docs/PROJECT_DOCUMENTATION.md`
-
-## 🤖 ServerAI MVP
-
-В репозиторий добавлен отдельный модуль `ServerAI/` для AI-детекции людей по WebRTC видеопотоку.
-
-Что входит в MVP:
-
-- `aiohttp` WebSocket сигналинг на `ws://<server>:8080/ws`
-- `aiortc` для приема WebRTC video track и DataChannel
-- `ultralytics` + `torch` (CPU) для YOLO-инференса
-- отправка JSON с детекциями `person` обратно в Android-клиент через DataChannel
-
-Быстрый запуск:
-
-```bash
-cd ServerAI
-python -m venv .venv
-. .venv/bin/activate
-pip install -r requirements.txt
-python server.py
-```
-
-Android-клиент в `ClientApp/` теперь содержит отдельный AI экран для локального preview, WebRTC uplink и отрисовки bbox поверх видео.
-
-Краткая инструкция для ручного теста с ПК и телефона: `Docs/QUICK_MANUAL_TEST.md`
-
-One-page версия для боевого прогона: `Docs/QUICK_MANUAL_TEST_ONEPAGE.md`
-
-## 🐧 Развертывание на Linux
-
-См. инструкции в `Docs/PROJECT_DOCUMENTATION.md`, раздел "Развертывание".
-
-Для TLS через Nginx используйте:
-
-```bash
-sudo bash scripts/setup_tls_nginx.sh your-domain.example
-```
+- Короткий офлайн-гайд: [Docs/GPS_LOCAL_OFFLINE_QUICKSTART.md](Docs/GPS_LOCAL_OFFLINE_QUICKSTART.md)
+- Безопасность: [Docs/SECURITY.md](Docs/SECURITY.md)

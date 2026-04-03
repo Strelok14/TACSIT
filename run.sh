@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export DOTNET_ROOT="${DOTNET_ROOT:-$ROOT_DIR/offline_deps/dotnet}"
+export DOTNET_ROOT="${DOTNET_ROOT:-$ROOT_DIR/offline_deps/dotnet/linux-x64}"
 export PATH="$DOTNET_ROOT:$PATH"
 export ASPNETCORE_ENVIRONMENT="${ASPNETCORE_ENVIRONMENT:-Local}"
 export ASPNETCORE_URLS="${ASPNETCORE_URLS:-http://0.0.0.0:5001}"

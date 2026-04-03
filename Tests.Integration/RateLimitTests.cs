@@ -104,4 +104,19 @@ public sealed class FixedWindowRateLimiter : ITelemetryRateLimiter
         var count = _counters.AddOrUpdate(beaconId, 1, (_, v) => v + 1);
         return Task.FromResult(count <= _max);
     }
+
+    public Task<bool> IsAllowedAsync(
+        int subjectId,
+        string channel,
+        string sourceIp,
+        int capacity,
+        double refillPerSecond,
+        CancellationToken cancellationToken = default)
+    {
+        // Для теста важно только ограничение количества запросов,
+        // поэтому оставляем простой фиксированный счётчик по subjectId.
+        var count = _counters.AddOrUpdate(subjectId, 1, (_, v) => v + 1);
+        var effectiveLimit = capacity > 0 ? Math.Min(capacity, _max) : _max;
+        return Task.FromResult(count <= effectiveLimit);
+    }
 }

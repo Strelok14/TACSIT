@@ -61,3 +61,13 @@ venv/
 local.properties
 ClientApp/.idea/
 ClientApp/app/build/
+
+# Offline dependencies (large binary cache, local only)
+offline_deps/**
+!offline_deps/README.md
+!offline_deps/**/.gitkeep
+
+# Local offline runtime artifacts
+App_Data/
+server.local.env
+strikeball-local-demo.service

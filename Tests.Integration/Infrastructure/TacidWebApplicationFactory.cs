@@ -21,11 +21,11 @@ public class TacidWebApplicationFactory : WebApplicationFactory<Program>
     public static readonly string TestMasterKeyB64 = Convert.ToBase64String(new byte[32]);
     public static readonly string TestJwtSigningKey = new string('T', 64);
     public const string AdminLogin = "admin";
-    public const string AdminPassword = "admin-secret";
+    public const string AdminPassword = "AdminDemo123!";
     public const string ObserverLogin = "observer";
-    public const string ObserverPassword = "obs-secret";
+    public const string ObserverPassword = "ObserverDemo123!";
     public const string PlayerLogin = "player1";
-    public const string PlayerPassword = "player-secret";
+    public const string PlayerPassword = "PlayerDemo123!";
     public const int PlayerBeaconId = 100;
 
     private SqliteConnection? _dbConnection;

@@ -2,6 +2,9 @@ $ErrorActionPreference = 'Stop'
 
 $RootDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $OfflineDir = Join-Path $RootDir 'offline_deps'
+$DotnetWinDir = Join-Path $OfflineDir 'dotnet\win-x64'
+$PostgresWinDir = Join-Path $OfflineDir 'postgres\win-x64\pgsql'
+$RedisWinDir = Join-Path $OfflineDir 'redis\win-x64'
 $ServerProject = Join-Path $RootDir 'Server\StrikeballServer.csproj'
 $EnvFile = if ($env:TACID_ENV_FILE) { $env:TACID_ENV_FILE } else { Join-Path $RootDir 'server.local.env' }
 
@@ -11,12 +14,12 @@ function Require-Path([string]$PathValue) {
     }
 }
 
-Require-Path (Join-Path $OfflineDir 'dotnet')
+Require-Path $DotnetWinDir
 Require-Path (Join-Path $OfflineDir 'nuget')
-Require-Path (Join-Path $OfflineDir 'postgres')
-Require-Path (Join-Path $OfflineDir 'redis')
+Require-Path $PostgresWinDir
+Require-Path $RedisWinDir
 
-$env:DOTNET_ROOT = if ($env:DOTNET_ROOT) { $env:DOTNET_ROOT } else { Join-Path $OfflineDir 'dotnet' }
+$env:DOTNET_ROOT = if ($env:DOTNET_ROOT) { $env:DOTNET_ROOT } else { $DotnetWinDir }
 $env:PATH = "$env:DOTNET_ROOT;$env:PATH"
 $env:ASPNETCORE_ENVIRONMENT = 'Local'
 $env:ASPNETCORE_URLS = if ($env:ASPNETCORE_URLS) { $env:ASPNETCORE_URLS } else { 'http://0.0.0.0:5001' }
@@ -38,13 +41,13 @@ Redis__ConnectionString=$($env:Redis__ConnectionString)
 Security__SecretStoreDirectory=$($env:Security__SecretStoreDirectory)
 "@ | Set-Content -Encoding UTF8 $EnvFile
 
-$redisExe = Join-Path $OfflineDir 'redis\redis-server.exe'
+$redisExe = Join-Path $RedisWinDir 'redis-server.exe'
 if (Test-Path $redisExe) {
     Start-Process -FilePath $redisExe -ArgumentList '--port 6379 --save "" --appendonly no' -WindowStyle Hidden
 }
 
-$pgCtl = Join-Path $OfflineDir 'postgres\bin\pg_ctl.exe'
-$initDb = Join-Path $OfflineDir 'postgres\bin\initdb.exe'
+$pgCtl = Join-Path $PostgresWinDir 'bin\pg_ctl.exe'
+$initDb = Join-Path $PostgresWinDir 'bin\initdb.exe'
 $pgData = Join-Path $RootDir 'App_Data\postgres'
 if ((Test-Path $initDb) -and -not (Test-Path (Join-Path $pgData 'PG_VERSION'))) {
     & $initDb -D $pgData | Out-Host
